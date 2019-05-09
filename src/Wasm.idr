@@ -31,16 +31,8 @@ data IntTestOp = Eqz
 
 data IntRelOp = EqInt | NeInt | LtInt Sign | GtInt Sign | LeInt Sign | GeInt Sign
 
-data Mutability = Immutable | Mutable
-
-record Global where
-    constructor MkGlobal
-    mutability : Mutability
-    type : ValueType
-
 record CodeCtx where
     constructor MkCodeCtx
-    globals : List Global
     -- `types` only list types available for call_indirect. When we emit, we
     -- append function types to the end, and emit function declarations that
     -- refer to those appended types.
@@ -52,15 +44,11 @@ record CodeCtx where
 
 record FunctionCtx where
     constructor MkFunctionCtx
-    globals : List Global
     functions : List FuncType
     types : List FuncType
 
 withLabel : ResultType -> CodeCtx -> CodeCtx
-withLabel ty (MkCodeCtx gs fs ts ls lbs ret) = MkCodeCtx gs fs ts ls (ty :: lbs) ret
-
-GlobalIdx : Type
-GlobalIdx = Nat
+withLabel ty (MkCodeCtx fs ts ls lbs ret) = MkCodeCtx fs ts ls (ty :: lbs) ret
 
 FuncIdx : Type
 FuncIdx = Nat
@@ -74,38 +62,32 @@ LocalIdx = Nat
 LabelIdx : Type
 LabelIdx = Nat
 
-data HasGlobal : CodeCtx -> GlobalIdx -> Global -> Type where
-    HasGlobalHere : HasGlobal (MkCodeCtx (g :: _) ts fs ls lbs ret) 0 g
-    HasGlobalThere :
-        HasGlobal (MkCodeCtx gs fs ts ls lbs ret) idx g
-        -> HasGlobal (MkCodeCtx (_ :: gs) fs ts ls lbs ret) (S idx) g
-
 data HasFunc : CodeCtx -> FuncIdx -> FuncType -> Type where
-    HasFuncHere : HasFunc (MkCodeCtx gs (f :: _) ts ls lbs ret) 0 f
+    HasFuncHere : HasFunc (MkCodeCtx (f :: _) ts ls lbs ret) 0 f
     HasFuncThere :
-        HasFunc (MkCodeCtx gs fs ts ls lbs ret) idx f
-        -> HasFunc (MkCodeCtx gs (_ :: fs) ts ls lbs ret) (S idx) f
+        HasFunc (MkCodeCtx fs ts ls lbs ret) idx f
+        -> HasFunc (MkCodeCtx (_ :: fs) ts ls lbs ret) (S idx) f
 
 data HasType : CodeCtx -> TypeIdx -> FuncType -> Type where
-    HasTypeHere : HasType (MkCodeCtx gs fs (t :: _) ls lbs ret) 0 t
+    HasTypeHere : HasType (MkCodeCtx fs (t :: _) ls lbs ret) 0 t
     HasTypeThere :
-        HasType (MkCodeCtx gs fs ts ls lbs ret) idx t
-        -> HasType (MkCodeCtx gs fs (_ :: ts) ls lbs ret) (S idx) t
+        HasType (MkCodeCtx fs ts ls lbs ret) idx t
+        -> HasType (MkCodeCtx fs (_ :: ts) ls lbs ret) (S idx) t
 
 data HasLocal : CodeCtx -> LocalIdx -> ValueType -> Type where
-    HasLocalHere : HasLocal (MkCodeCtx gs fs ts (l :: _) lbs ret) 0 l
+    HasLocalHere : HasLocal (MkCodeCtx fs ts (l :: _) lbs ret) 0 l
     HasLocalThere :
-        HasLocal (MkCodeCtx gs fs ts ls lbs ret) idx l
-        -> HasLocal (MkCodeCtx gs fs ts (_ :: ls) lbs ret) (S idx) l
+        HasLocal (MkCodeCtx fs ts ls lbs ret) idx l
+        -> HasLocal (MkCodeCtx fs ts (_ :: ls) lbs ret) (S idx) l
 
 data HasLabel : CodeCtx -> LabelIdx -> ResultType -> Type where
-    HasLabelHere : HasLabel (MkCodeCtx gs fs ts ls (l :: _) ret) 0 l
+    HasLabelHere : HasLabel (MkCodeCtx fs ts ls (l :: _) ret) 0 l
     HasLabelThere :
-        HasLabel (MkCodeCtx gs fs ts ls lbs ret) idx l
-        -> HasLabel (MkCodeCtx gs fs ts ls (_ :: lbs) ret) (S idx) l
+        HasLabel (MkCodeCtx fs ts ls lbs ret) idx l
+        -> HasLabel (MkCodeCtx fs ts ls (_ :: lbs) ret) (S idx) l
 
 data HasReturn : CodeCtx -> ResultType -> Type where
-    HasReturnCtx : HasReturn (MkCodeCtx gs fs ts ls lbs ret) ret        
+    HasReturnCtx : HasReturn (MkCodeCtx fs ts ls lbs ret) ret        
 
     
 mutual
@@ -121,8 +103,9 @@ mutual
         LocalGet : (idx : LocalIdx) -> {v : HasLocal ctx idx ty} -> Instr ctx (Some ty)
         LocalSet : (idx : LocalIdx) -> {v : HasLocal ctx idx ty} -> Instr ctx (Some ty) -> Instr ctx None
         LocalTee : (idx : LocalIdx) -> {v : HasLocal ctx idx ty} -> Instr ctx (Some ty) -> Instr ctx (Some ty)
-        GlobalGet : (idx : GlobalIdx) -> {v : HasGlobal ctx idx (MkGlobal mut ty)} -> Instr ctx (Some ty)
-        GlobalSet : (idx : GlobalIdx) -> {v : HasGlobal ctx idx (MkGlobal Mutable ty)} -> Instr ctx (Some ty) -> Instr ctx None
+        -- module always has one mutable i32 global
+        GlobalGet : Instr ctx (Some I32)
+        GlobalSet : Instr ctx (Some I32) -> Instr ctx None
         -- only stores and loads for i32, and memarg is always {offset: 0, align: 4}
         Load : Instr ctx (Some I32) -> Instr ctx (Some I32)
         Store : Instr ctx (Some I32) -> Instr ctx (Some I32) -> Instr ctx None
@@ -143,7 +126,6 @@ mutual
 
 codeCtx : FunctionCtx -> ResultType -> List ValueType -> CodeCtx
 codeCtx fnCtx returnTy locals = MkCodeCtx
-    (globals fnCtx)
     (functions fnCtx)
     (types fnCtx)
     locals
@@ -155,15 +137,14 @@ record Function (ctx : FunctionCtx) (ty : FuncType) where
     locals : List ValueType
     body : Expr (codeCtx ctx (result ty) locals) (result ty)
 
-moduleFunctions : FunctionCtx -> List FuncType -> Type
-moduleFunctions ctx [] = ()
-moduleFunctions ctx (f :: fs) = (Function ctx f, moduleFunctions ctx fs)
+data Functions : FunctionCtx -> List FuncType -> Type where
+    FunctionsNil : Functions ctx []
+    FunctionsCons : Function ctx t -> Functions ctx ts -> Functions ctx (t :: ts)
 
 -- FIXME: tables are missing
 
 record Module where
     constructor MkModule
-    globals : List Global
     decls : List FuncType
     types : List FuncType
-    functions : moduleFunctions (MkFunctionCtx globals decls types) decls
+    functions : Functions (MkFunctionCtx decls types) decls

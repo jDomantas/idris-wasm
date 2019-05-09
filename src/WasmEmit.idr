@@ -55,10 +55,6 @@ Emit FuncType where
 -- missing: Emit MemoryType
 -- missing: Emit TableType
 
-Emit Global where
-    emit (MkGlobal Immutable type) = emit type ++ [0x00]
-    emit (MkGlobal Mutable type) = emit type ++ [0x01]
-
 mutual
     Emit (CallParams ctx ty) where
         emit ParamsNil = []
@@ -87,8 +83,8 @@ mutual
         emit (LocalGet idx) = [0x20] ++ emit idx
         emit (LocalSet idx val) = emit val ++ [0x21] ++ emit idx
         emit (LocalTee idx val) = emit val ++ [0x22] ++ emit idx
-        emit (GlobalGet idx) = [0x23] ++ emit idx
-        emit (GlobalSet idx val) = emit val ++ [0x24] ++ emit idx
+        emit GlobalGet = [0x23, 0x00]
+        emit (GlobalSet val) = emit val ++ [0x24, 0x00]
         emit (Load addr) = emit addr ++ [0x28, 0x02, 0x00]
         emit (Store addr val) = emit val ++ emit addr ++ [0x36, 0x02, 0x00]
         emit MemorySize = [0x3F, 0x00]
