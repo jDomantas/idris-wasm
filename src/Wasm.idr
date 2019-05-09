@@ -39,16 +39,12 @@ record CodeCtx where
     functions : List FuncType
     types : List FuncType
     locals : List ValueType
-    labels : List ResultType
     return : ResultType
 
 record FunctionCtx where
     constructor MkFunctionCtx
     functions : List FuncType
     types : List FuncType
-
-withLabel : ResultType -> CodeCtx -> CodeCtx
-withLabel ty (MkCodeCtx fs ts ls lbs ret) = MkCodeCtx fs ts ls (ty :: lbs) ret
 
 FuncIdx : Type
 FuncIdx = Nat
@@ -59,29 +55,26 @@ TypeIdx = Nat
 LocalIdx : Type
 LocalIdx = Nat
 
-LabelIdx : Type
-LabelIdx = Nat
-
 data HasFunc : CodeCtx -> FuncIdx -> FuncType -> Type where
-    HasFuncHere : HasFunc (MkCodeCtx (f :: _) ts ls lbs ret) 0 f
+    HasFuncHere : HasFunc (MkCodeCtx (f :: _) ts ls ret) 0 f
     HasFuncThere :
-        HasFunc (MkCodeCtx fs ts ls lbs ret) idx f
-        -> HasFunc (MkCodeCtx (_ :: fs) ts ls lbs ret) (S idx) f
+        HasFunc (MkCodeCtx fs ts ls ret) idx f
+        -> HasFunc (MkCodeCtx (_ :: fs) ts ls ret) (S idx) f
 
 data HasType : CodeCtx -> TypeIdx -> FuncType -> Type where
-    HasTypeHere : HasType (MkCodeCtx fs (t :: _) ls lbs ret) 0 t
+    HasTypeHere : HasType (MkCodeCtx fs (t :: _) ls ret) 0 t
     HasTypeThere :
-        HasType (MkCodeCtx fs ts ls lbs ret) idx t
-        -> HasType (MkCodeCtx fs (_ :: ts) ls lbs ret) (S idx) t
+        HasType (MkCodeCtx fs ts ls ret) idx t
+        -> HasType (MkCodeCtx fs (_ :: ts) ls ret) (S idx) t
 
 data HasLocal : CodeCtx -> LocalIdx -> ValueType -> Type where
-    HasLocalHere : HasLocal (MkCodeCtx fs ts (l :: _) lbs ret) 0 l
+    HasLocalHere : HasLocal (MkCodeCtx fs ts (l :: _) ret) 0 l
     HasLocalThere :
-        HasLocal (MkCodeCtx fs ts ls lbs ret) idx l
-        -> HasLocal (MkCodeCtx fs ts (_ :: ls) lbs ret) (S idx) l
+        HasLocal (MkCodeCtx fs ts ls ret) idx l
+        -> HasLocal (MkCodeCtx fs ts (_ :: ls) ret) (S idx) l
 
 data HasReturn : CodeCtx -> ResultType -> Type where
-    HasReturnCtx : HasReturn (MkCodeCtx fs ts ls lbs ret) ret        
+    HasReturnCtx : HasReturn (MkCodeCtx fs ts ls ret) ret        
 
 mutual
     data CallParams : CodeCtx -> List ValueType -> Type where
@@ -105,8 +98,8 @@ mutual
         MemorySize : Instr ctx (Some I32)
         MemoryGrow : Instr ctx (Some I32) -> Instr ctx (Some I32)
         Unreachable : Instr ctx ty
-        Loop : (ty : ResultType) -> Expr ctx ty -> Instr (withLabel ty ctx) ty
-        If : (ty : ResultType) -> Expr (withLabel ty ctx) ty -> Expr (withLabel ty ctx) ty -> Instr ctx ty
+        Loop : (ty : ResultType) -> Expr ctx ty -> Instr ctx ty
+        If : (ty : ResultType) -> Expr ctx ty -> Expr ctx ty -> Instr ctx ty
         Return : {v : HasReturn ctx ty} -> Instr ctx ty -> Instr ctx anyTy
         Call : (idx : FuncIdx) -> {v : HasFunc ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (result f)
         CallIndirect : (idx : TypeIdx) -> {v : HasType ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (Some I32) -> Instr ctx (result f)
@@ -117,12 +110,7 @@ mutual
         ExprChain : Instr ctx None -> Expr ctx ty -> Expr ctx ty
 
 codeCtx : FunctionCtx -> ResultType -> List ValueType -> CodeCtx
-codeCtx fnCtx returnTy locals = MkCodeCtx
-    (functions fnCtx)
-    (types fnCtx)
-    locals
-    []
-    returnTy
+codeCtx fnCtx returnTy locals = MkCodeCtx (functions fnCtx) (types fnCtx) locals returnTy
 
 record Function (ctx : FunctionCtx) (ty : FuncType) where
     constructor MkFunction
