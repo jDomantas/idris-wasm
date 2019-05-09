@@ -1,11 +1,10 @@
 package Wasm
 
 modules
-    = Common
-    , BExp
-    , IR
-    , Translate
+    = Wasm
+    , WasmEmit
+    , Main
 
 sourcedir = src
 executable = wasm
-main = Translate
+main = Main
