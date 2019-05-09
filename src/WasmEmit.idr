@@ -1,5 +1,6 @@
 module WasmEmit
 
+import Data.Fin
 import Wasm
 
 -- Defines mapping from Wasm.Module to wasm binary format
@@ -70,16 +71,16 @@ mutual
         emit (Binop (RemInt Signed) a b) = emit a ++ emit b ++ [0x6F]
         emit (Binop (RemInt Unsigned) a b) = emit a ++ emit b ++ [0x70]
         emit (Testop Eqz a) = emit a ++ [0x45]
-        emit (Relop EqInt a b) = [0x46]
-        emit (Relop NeInt a b) = [0x47]
-        emit (Relop (LtInt Signed) a b) = [0x48]
-        emit (Relop (LtInt Unsigned) a b) = [0x49]
-        emit (Relop (GtInt Signed) a b) = [0x4A]
-        emit (Relop (GtInt Unsigned) a b) = [0x4B]
-        emit (Relop (LeInt Signed) a b) = [0x4C]
-        emit (Relop (LeInt Unsigned) a b) = [0x4D]
-        emit (Relop (GeInt Signed) a b) = [0x4E]
-        emit (Relop (GeInt Unsigned) a b) = [0x4F]
+        emit (Relop EqInt a b) = emit a ++ emit b ++ [0x46]
+        emit (Relop NeInt a b) = emit a ++ emit b ++ [0x47]
+        emit (Relop (LtInt Signed) a b) = emit a ++ emit b ++ [0x48]
+        emit (Relop (LtInt Unsigned) a b) = emit a ++ emit b ++ [0x49]
+        emit (Relop (GtInt Signed) a b) = emit a ++ emit b ++ [0x4A]
+        emit (Relop (GtInt Unsigned) a b) = emit a ++ emit b ++ [0x4B]
+        emit (Relop (LeInt Signed) a b) = emit a ++ emit b ++ [0x4C]
+        emit (Relop (LeInt Unsigned) a b) = emit a ++ emit b ++ [0x4D]
+        emit (Relop (GeInt Signed) a b) = emit a ++ emit b ++ [0x4E]
+        emit (Relop (GeInt Unsigned) a b) = emit a ++ emit b ++ [0x4F]
         emit (LocalGet idx) = [0x20] ++ emit idx
         emit (LocalSet idx val) = emit val ++ [0x21] ++ emit idx
         emit (LocalTee idx val) = emit val ++ [0x22] ++ emit idx
@@ -90,7 +91,6 @@ mutual
         emit MemorySize = [0x3F, 0x00]
         emit (MemoryGrow pages) = emit pages ++ [0x40, 0x00]
         emit Unreachable = [0x00]
-        emit (Loop ty body) = [0x03] ++ emit ty ++ emit body ++ [0x0B]
         emit (If ty t e) = [0x04] ++ emit ty ++ emit t ++ [0x05] ++ emit e ++ [0x0B]
         emit (Return val) = emit val ++ [0x0F]
         emit (Call idx params) = emit params ++ [0x10] ++ emit idx
@@ -101,4 +101,48 @@ mutual
         emit (ExprReturn instr) = emit instr
         emit (ExprChain i e) = emit i ++ emit e
 
+emitSection : Emit a => Int -> a -> List Int
+emitSection id section = [id] ++ emit (length emitted) ++ emitted
+    where
+        emitted : List Int
+        emitted = emit section
 
+Emit Unit where
+    emit () = []
+
+range : Nat -> Nat -> List Nat
+range from to = if from >= to then [] else from :: range (from + 1) to
+
+emitLimits : Nat -> Maybe Nat -> List Int
+emitLimits min Nothing = [0x00] ++ emit min
+emitLimits min (Just max) = [0x01] ++ emit min ++ emit max
+
+emitTable : Nat -> List Int
+emitTable size = [0x70] ++ emitLimits size (Just size)
+
+emitMemory : List Int
+emitMemory = emitLimits 0 Nothing
+
+emitGlobal : ValueType -> List Int
+emitGlobal ty = emit ty ++ [0x01]
+
+emitTableElems : List (Fin x) -> List Int
+emitTableElems elems =
+    [0x00, 0x41, 0x00] ++ emit (map finToNat elems)
+
+Emit Module where
+    emit (MkModule decls types functions table) =
+        emitSection 1 (types ++ decls) ++
+        emitSection 3 properDecls ++
+        emitSection 4 [emitTable (length table)] ++
+        emitSection 5 [emitMemory] ++
+        emitSection 6 [emitGlobal I32] ++
+        emitSection 9 [emitTableElems table] ++
+        emitSection 10 ({- FIXME: emit function bodies -})
+            where
+                properDecls : List Nat
+                properDecls = range (length types) (length types + length decls)
+
+export
+emitModule : Module -> List Int
+emitModule m = emit m

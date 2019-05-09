@@ -1,6 +1,7 @@
 module Wasm
 
 import Data.List
+import Data.Fin
 
 %default total
 %access public export
@@ -98,7 +99,6 @@ mutual
         MemorySize : Instr ctx (Some I32)
         MemoryGrow : Instr ctx (Some I32) -> Instr ctx (Some I32)
         Unreachable : Instr ctx ty
-        Loop : (ty : ResultType) -> Expr ctx ty -> Instr ctx ty
         If : (ty : ResultType) -> Expr ctx ty -> Expr ctx ty -> Instr ctx ty
         Return : {v : HasReturn ctx ty} -> Instr ctx ty -> Instr ctx anyTy
         Call : (idx : FuncIdx) -> {v : HasFunc ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (result f)
@@ -121,10 +121,14 @@ data Functions : FunctionCtx -> List FuncType -> Type where
     FunctionsNil : Functions ctx []
     FunctionsCons : Function ctx t -> Functions ctx ts -> Functions ctx (t :: ts)
 
--- FIXME: tables are missing
+-- module implicitly contains:
+-- * single memory with initial size of 0 and unlimited maximum
+-- * single mutable i32 global
+-- * exports the last function and names it main
 
 record Module where
     constructor MkModule
     decls : List FuncType
     types : List FuncType
     functions : Functions (MkFunctionCtx decls types) decls
+    table : List (Fin (length decls))
