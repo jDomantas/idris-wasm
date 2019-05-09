@@ -80,16 +80,9 @@ data HasLocal : CodeCtx -> LocalIdx -> ValueType -> Type where
         HasLocal (MkCodeCtx fs ts ls lbs ret) idx l
         -> HasLocal (MkCodeCtx fs ts (_ :: ls) lbs ret) (S idx) l
 
-data HasLabel : CodeCtx -> LabelIdx -> ResultType -> Type where
-    HasLabelHere : HasLabel (MkCodeCtx fs ts ls (l :: _) ret) 0 l
-    HasLabelThere :
-        HasLabel (MkCodeCtx fs ts ls lbs ret) idx l
-        -> HasLabel (MkCodeCtx fs ts ls (_ :: lbs) ret) (S idx) l
-
 data HasReturn : CodeCtx -> ResultType -> Type where
     HasReturnCtx : HasReturn (MkCodeCtx fs ts ls lbs ret) ret        
 
-    
 mutual
     data CallParams : CodeCtx -> List ValueType -> Type where
         ParamsNil : CallParams ctx []
@@ -112,7 +105,6 @@ mutual
         MemorySize : Instr ctx (Some I32)
         MemoryGrow : Instr ctx (Some I32) -> Instr ctx (Some I32)
         Unreachable : Instr ctx ty
-        Block : (ty : ResultType) -> Expr ctx ty -> Instr (withLabel ty ctx) ty
         Loop : (ty : ResultType) -> Expr ctx ty -> Instr (withLabel ty ctx) ty
         If : (ty : ResultType) -> Expr (withLabel ty ctx) ty -> Expr (withLabel ty ctx) ty -> Instr ctx ty
         Return : {v : HasReturn ctx ty} -> Instr ctx ty -> Instr ctx anyTy

@@ -90,7 +90,6 @@ mutual
         emit MemorySize = [0x3F, 0x00]
         emit (MemoryGrow pages) = emit pages ++ [0x40, 0x00]
         emit Unreachable = [0x00]
-        emit (Block ty body) = [0x02] ++ emit ty ++ emit body ++ [0x0B]
         emit (Loop ty body) = [0x03] ++ emit ty ++ emit body ++ [0x0B]
         emit (If ty t e) = [0x04] ++ emit ty ++ emit t ++ [0x05] ++ emit e ++ [0x0B]
         emit (Return val) = emit val ++ [0x0F]
