@@ -1,0 +1,11 @@
+package Wasm
+
+modules
+    = Common
+    , BExp
+    , IR
+    , Translate
+
+sourcedir = src
+executable = wasm
+main = Translate
