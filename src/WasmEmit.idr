@@ -46,8 +46,8 @@ Emit ValueType where
     emit I32 = [0x7F]
 
 Emit ResultType where
-    emit None = [0x40]
-    emit (Some ty) = emit ty
+    emit None = [0x00]
+    emit (Some ty) = emit [ty]
 
 Emit FuncType where
     emit (MkFuncType args result) = 0x60 :: emit args ++ emit result
@@ -101,11 +101,9 @@ mutual
         emit (ExprReturn instr) = emit instr
         emit (ExprChain i e) = emit i ++ emit e
 
-emitSection : Emit a => Int -> a -> List Int
-emitSection id section = [id] ++ emit (length emitted) ++ emitted
-    where
-        emitted : List Int
-        emitted = emit section
+emitSection : Int -> List Int -> List Int
+emitSection _ [0] = []
+emitSection id section = [id] ++ emit (length section) ++ section
 
 Emit Unit where
     emit () = []
@@ -118,27 +116,51 @@ emitLimits min Nothing = [0x00] ++ emit min
 emitLimits min (Just max) = [0x01] ++ emit min ++ emit max
 
 emitTable : Nat -> List Int
-emitTable size = [0x70] ++ emitLimits size (Just size)
+emitTable size = [0x01, 0x70] ++ emitLimits size (Just size)
 
 emitMemory : List Int
-emitMemory = emitLimits 0 Nothing
+emitMemory = [0x01] ++ emitLimits 0 Nothing
 
 emitGlobal : ValueType -> List Int
-emitGlobal ty = emit ty ++ [0x01]
+emitGlobal ty = [0x01] ++ emit ty ++ [0x01, 0x41, 0x00, 0x0B]
 
 emitTableElems : List (Fin x) -> List Int
-emitTableElems elems =
-    [0x00, 0x41, 0x00] ++ emit (map finToNat elems)
+emitTableElems elems = [0x01, 0x00, 0x41, 0x00, 0x0B] ++ emit (map finToNat elems)
+
+Emit (Function ctx ty) where
+    emit (MkFunction locals body) = emit (length el + length eb) ++ el ++ eb
+        where
+            el : List Int
+            el = emit locals
+            eb : List Int
+            eb = emit body ++ [0x0B]
+
+Emit (Functions ctx types) where
+    emit fns = emit (count fns) ++ emf fns
+        where
+            count : Functions ctx ty -> Nat
+            count FunctionsNil = 0
+            count (FunctionsCons _ fs) = 1 + count fs
+            emf : Functions ctx types -> List Int
+            emf FunctionsNil = []
+            emf (FunctionsCons f fs) = emit f ++ emf fs
+
+header : List Int
+header =
+    [ 0x00, 0x61, 0x73, 0x6D
+    , 0x01, 0x00, 0x00, 0x00
+    ]
 
 Emit Module where
     emit (MkModule decls types functions table) =
-        emitSection 1 (types ++ decls) ++
-        emitSection 3 properDecls ++
-        emitSection 4 [emitTable (length table)] ++
-        emitSection 5 [emitMemory] ++
-        emitSection 6 [emitGlobal I32] ++
-        emitSection 9 [emitTableElems table] ++
-        emitSection 10 ({- FIXME: emit function bodies -})
+        header ++
+        emitSection 1 (emit (types ++ decls)) ++
+        emitSection 3 (emit properDecls) ++
+        emitSection 4 (emitTable (length table)) ++
+        emitSection 5 emitMemory ++
+        emitSection 6 (emitGlobal I32) ++
+        emitSection 9 (emitTableElems table) ++
+        emitSection 10 (emit functions)
             where
                 properDecls : List Nat
                 properDecls = range (length types) (length types + length decls)

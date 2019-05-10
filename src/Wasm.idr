@@ -115,7 +115,7 @@ codeCtx fnCtx returnTy locals = MkCodeCtx (functions fnCtx) (types fnCtx) locals
 record Function (ctx : FunctionCtx) (ty : FuncType) where
     constructor MkFunction
     locals : List ValueType
-    body : Expr (codeCtx ctx (result ty) locals) (result ty)
+    body : Expr (codeCtx ctx (result ty) (args ty ++ locals)) (result ty)
 
 data Functions : FunctionCtx -> List FuncType -> Type where
     FunctionsNil : Functions ctx []
