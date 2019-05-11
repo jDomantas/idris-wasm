@@ -3,8 +3,10 @@ module Main
 import Data.Fin
 import Wasm
 import WasmEmit
+import Mir
+import MirToWasm
 
-wasmModule : Module
+wasmModule : Wasm.Module
 wasmModule =
     MkModule
         [MkFuncType [I32] (Some I32)]

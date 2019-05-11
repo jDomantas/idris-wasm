@@ -1,27 +1,33 @@
-module MIR
+module Mir
 
 import Data.Fin
+import Data.List
 
 %default total
 %access public export
 
-data Value = ValueInt Integer | ValueStr String | ValueChar Char
+data ValueType = Obj | Num
 
-data ExpType = Object | Number
+data Op = Add | Sub | Mul | Div | Rem | Eq | Ne | Lt | Le | Gt | Ge
 
-data MExp : ExpType -> Nat -> MExp where
-    Const : Int -> ExpType Number locals
-    Local : Fin locals -> MExp Object locals
-    Let : MExp Object locals -> MExp Object (S locals)
-    Create : MExp Number locals -> List Object (MExp locals) -> MExp Object locals
-    Field : MExp Object locals -> MExp Number locals -> MExp Object locals
-    Tag : MExp Object locals -> MExp Number locals
-    If : MExp Number locals -> MExp ty locals -> MExp ty locals -> MExp ty locals
-    Call : MExp Number locals -> List (MExp Object locals) -> MExp Object locals
+data MExp : ValueType -> Nat -> Type where
+    Const : Integer -> MExp Num locals
+    Local : Fin locals -> MExp Obj locals
+    Let : MExp Obj locals -> MExp Obj (S locals)
+    Create : MExp Num locals -> List (MExp Obj locals) -> MExp Obj locals
+    Field : MExp Obj locals -> MExp Num locals -> MExp Obj locals
+    Tag : MExp Obj locals -> MExp Num locals
+    If : MExp Num locals -> MExp ty locals -> MExp ty locals -> MExp ty locals
+    Call : Nat -> List (MExp Obj locals) -> MExp Obj locals
+    CallVirt : MExp Num locals -> MExp Obj locals -> MExp Obj locals -> MExp Obj locals
+    Binop : Op -> MExp Num locals -> MExp Num locals -> MExp Num locals
 
 record MDef where
     constructor MkMDef
     args : Nat
-    body : MExp args
+    body : MExp Obj args
 
-
+record Module where
+    constructor MkModule
+    defs : List MDef
+    main : Elem d defs

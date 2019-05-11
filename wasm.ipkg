@@ -4,7 +4,8 @@ modules
     = Wasm
     , WasmEmit
     , WasmEmitText
-    , MIR
+    , Mir
+    , MirToWasm
     , Main
 
 sourcedir = src
