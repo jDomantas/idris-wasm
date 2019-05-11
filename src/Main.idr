@@ -7,9 +7,9 @@ import WasmEmit
 wasmModule : Module
 wasmModule =
     MkModule
-        [MkFuncType [] (Some I32)]
+        [MkFuncType [I32] (Some I32)]
         []
-        (FunctionsCons (MkFunction [] (ExprReturn (Const (ValueI32 5)))) FunctionsNil)
+        (FunctionsCons (MkFunction [] (ExprReturn (Binop MulInt (LocalGet 0 {v = HasLocalHere}) (Const (ValueI32 5))))) FunctionsNil)
         []
 
 bytes : List Int

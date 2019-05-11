@@ -19,7 +19,7 @@ record FuncType where
 data Sign = Signed | Unsigned
 
 data Value : ValueType -> Type where
-    ValueI32 : Nat -> Value I32
+    ValueI32 : Integer -> Value I32
 
 data IntBinaryOp
     = AddInt

@@ -52,10 +52,6 @@ Emit ResultType where
 Emit FuncType where
     emit (MkFuncType args result) = 0x60 :: emit args ++ emit result
 
--- missing: Emit Limits
--- missing: Emit MemoryType
--- missing: Emit TableType
-
 mutual
     Emit (CallParams ctx ty) where
         emit ParamsNil = []

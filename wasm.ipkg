@@ -3,6 +3,8 @@ package Wasm
 modules
     = Wasm
     , WasmEmit
+    , WasmEmitText
+    , MIR
     , Main
 
 sourcedir = src
