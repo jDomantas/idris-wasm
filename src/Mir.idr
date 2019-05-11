@@ -13,7 +13,7 @@ data Op = Add | Sub | Mul | Div | Rem | Eq | Ne | Lt | Le | Gt | Ge
 data MExp : ValueType -> Nat -> Type where
     Const : Integer -> MExp Num locals
     Local : Fin locals -> MExp Obj locals
-    Let : MExp Obj locals -> MExp Obj (S locals)
+    Let : MExp Obj locals -> MExp ty (S locals) -> MExp ty locals
     Create : MExp Num locals -> List (MExp Obj locals) -> MExp Obj locals
     Field : MExp Obj locals -> MExp Num locals -> MExp Obj locals
     Tag : MExp Obj locals -> MExp Num locals
