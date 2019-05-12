@@ -250,7 +250,23 @@ translateWithAlloc hasSlots (Let x y) (AllocLet a b c) =
         Chain
             (LocalSet (finToNat a) {prf = hasLocal hasSlots a} init)
             body
-translateWithAlloc hasSlots (Create x xs) alloc = ?translate_create
+translateWithAlloc hasSlots (Create x xs) (AllocCreate a b) =
+    let
+        tag = translateWithAlloc hasSlots x a
+        size = length xs * 4 + 4
+        -- size in pages rounded up
+        -- proper way to do this is (divNatNZ (size + 65535) 65536 SIsNotZ),
+        -- but that takes forever to typecheck
+        sizeInPages = assert_total (div (size + 65535) 65536)
+        -- check how much memory we have left
+        getSize = Binop MulInt MemorySize (Const (ValueI32 65536))
+        getRemaining = Binop SubInt getSize GlobalGet
+        -- grow by sizeInPages if not enough
+        needToGrow = Relop (LtInt Unsigned) getRemaining (Const (ValueI32 (toIntegerNat size)))
+        grow = Wasm.If None needToGrow (Drop (MemoryGrow (Const (ValueI32 (toIntegerNat sizeInPages))))) Empty
+        -- field initialization pushed
+    in
+        ?create_impl
 translateWithAlloc hasSlots (Field x y) (AllocField a b) =
     let
         obj = translateWithAlloc hasSlots x a
@@ -278,7 +294,7 @@ translateWithAlloc hasSlots (CallVirt x y z) (AllocCallVirt a b c) =
         arg1 = translateWithAlloc hasSlots y b
         arg2 = translateWithAlloc hasSlots z c
     in
-        ?callvirt_impl
+        CallIndirect fn arg1 arg2
 translateWithAlloc hasSlots (Binop Add y z) (AllocBinop a b) =
     let
         lhs = translateWithAlloc hasSlots y a
@@ -304,7 +320,7 @@ translateWithAlloc hasSlots (Binop Div y z) (AllocBinop a b) =
     in
         -- we actually don't know if this is supposed to be signed or unsigned
         -- division, so just assume signed because we just keep assuming that
-        -- stuff won't overflow
+        -- stuff won't overflow anyways
         Binop (DivInt Signed) lhs rhs
 translateWithAlloc hasSlots (Binop Rem y z) (AllocBinop a b) =
     let

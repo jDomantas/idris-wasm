@@ -90,6 +90,7 @@ mutual
         emit (Call idx params) = emit params ++ [0x10] ++ emit idx
         emit (CallIndirect fn a b) = emit a ++ emit b ++ emit fn ++ [0x11, 0x00, 0x00]
         emit (Chain a b) = emit a ++ emit b
+        emit Empty = []
 
 emitSection : Int -> List Int -> List Int
 emitSection _ [0] = []

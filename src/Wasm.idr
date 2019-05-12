@@ -65,6 +65,7 @@ mutual
         ParamsCons : Instr ctx (Some t) -> CallParams ctx ts -> CallParams ctx (t :: ts)
 
     data Instr : CodeCtx -> ResultType -> Type where
+        Drop : Instr ctx (Some ty) -> Instr ctx None
         Const : Value ty -> Instr ctx (Some ty)
         Binop : IntBinaryOp -> Instr ctx (Some ty) -> Instr ctx (Some ty) -> Instr ctx (Some ty)
         Testop : IntTestOp -> Instr ctx (Some ty) -> Instr ctx (Some I32)
@@ -80,11 +81,13 @@ mutual
         MemorySize : Instr ctx (Some I32)
         MemoryGrow : Instr ctx (Some I32) -> Instr ctx (Some I32)
         Unreachable : Instr ctx ty
-        If : (ty : ResultType) -> Instr ctx ty -> Instr ctx ty -> Instr ctx ty -> Instr ctx ty
+        If : (ty : ResultType) -> Instr ctx (Some I32) -> Instr ctx ty -> Instr ctx ty -> Instr ctx ty
         Call : (idx : FuncIdx) -> {v : HasFunc ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (result f)
         -- all virtual calls must have type [i32, i32] -> [i32]
         CallIndirect : (fn : Instr ctx (Some I32)) -> Instr ctx (Some I32) -> Instr ctx (Some I32) -> Instr ctx (Some I32)
         Chain : Instr ctx None -> Instr ctx ty -> Instr ctx ty
+        -- represents a sequence of zero instructions
+        Empty : Instr ctx None
 
 codeCtx : FunctionCtx -> List ValueType -> CodeCtx
 codeCtx fnCtx locals = MkCodeCtx (functions fnCtx) locals
