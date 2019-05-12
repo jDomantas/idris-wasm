@@ -256,7 +256,7 @@ translateDef :
     (ctx : FunctionCtx) ->
     (def : MDef) ->
     Function ctx (MkFuncType (mkArgs (args def)) (Some I32))
-translateDef ctx def = MkFunction [] (ExprReturn (Const (ValueI32 0)))
+translateDef ctx def = MkFunction [] (Const (ValueI32 0))
 
 translateDefsGo :
     (ctx : FunctionCtx) ->

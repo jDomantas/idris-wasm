@@ -99,16 +99,11 @@ mutual
         MemorySize : Instr ctx (Some I32)
         MemoryGrow : Instr ctx (Some I32) -> Instr ctx (Some I32)
         Unreachable : Instr ctx ty
-        If : (ty : ResultType) -> Expr ctx ty -> Expr ctx ty -> Instr ctx ty
+        If : (ty : ResultType) -> Instr ctx ty -> Instr ctx ty -> Instr ctx ty
         Return : {v : HasReturn ctx ty} -> Instr ctx ty -> Instr ctx anyTy
         Call : (idx : FuncIdx) -> {v : HasFunc ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (result f)
         CallIndirect : (idx : TypeIdx) -> {v : HasType ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (Some I32) -> Instr ctx (result f)
         Chain : Instr ctx None -> Instr ctx ty -> Instr ctx ty
-
-    data Expr : CodeCtx -> ResultType -> Type where
-        ExprEmpty : Expr ctx None
-        ExprReturn : Instr ctx ty -> Expr ctx ty
-        ExprChain : Instr ctx None -> Expr ctx ty -> Expr ctx ty
 
 codeCtx : FunctionCtx -> ResultType -> List ValueType -> CodeCtx
 codeCtx fnCtx returnTy locals = MkCodeCtx (functions fnCtx) (types fnCtx) locals returnTy
@@ -116,7 +111,7 @@ codeCtx fnCtx returnTy locals = MkCodeCtx (functions fnCtx) (types fnCtx) locals
 record Function (ctx : FunctionCtx) (ty : FuncType) where
     constructor MkFunction
     locals : List ValueType
-    body : Expr (codeCtx ctx (result ty) (args ty ++ locals)) (result ty)
+    body : Instr (codeCtx ctx (result ty) (args ty ++ locals)) (result ty)
 
 data Functions : FunctionCtx -> List FuncType -> Type where
     FunctionsNil : Functions ctx []

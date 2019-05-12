@@ -93,11 +93,6 @@ mutual
         emit (CallIndirect ty params idx) = emit params ++ emit idx ++ [0x11] ++ emit ty ++ [0x00]
         emit (Chain a b) = emit a ++ emit b
 
-    Emit (Expr ctx ty) where
-        emit ExprEmpty = []
-        emit (ExprReturn instr) = emit instr
-        emit (ExprChain i e) = emit i ++ emit e
-
 emitSection : Int -> List Int -> List Int
 emitSection _ [0] = []
 emitSection id section = [id] ++ emit (length section) ++ section
