@@ -88,9 +88,8 @@ mutual
         emit (MemoryGrow pages) = emit pages ++ [0x40, 0x00]
         emit Unreachable = [0x00]
         emit (If ty c t e) = emit c ++ [0x04] ++ emit ty ++ emit t ++ [0x05] ++ emit e ++ [0x0B]
-        emit (Return val) = emit val ++ [0x0F]
         emit (Call idx params) = emit params ++ [0x10] ++ emit idx
-        emit (CallIndirect ty params idx) = emit params ++ emit idx ++ [0x11] ++ emit ty ++ [0x00]
+        emit (CallIndirect fn a b) = emit a ++ emit b ++ emit fn ++ [0x11, 0x00, 0x00]
         emit (Chain a b) = emit a ++ emit b
 
 emitSection : Int -> List Int -> List Int
@@ -144,7 +143,7 @@ header =
     ]
 
 Emit Module where
-    emit (MkModule decls types functions table) =
+    emit (MkModule decls functions table) =
         header ++
         emitSection 1 (emit (types ++ decls)) ++
         emitSection 3 (emit properDecls) ++
@@ -154,6 +153,8 @@ Emit Module where
         emitSection 9 (emitTableElems table) ++
         emitSection 10 (emit functions)
             where
+                types : List FuncType
+                types = [MkFuncType [I32, I32] (Some I32)]
                 properDecls : List Nat
                 properDecls = range (length types) (length types + length decls)
 

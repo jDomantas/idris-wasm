@@ -34,48 +34,30 @@ data IntRelOp = EqInt | NeInt | LtInt Sign | GtInt Sign | LeInt Sign | GeInt Sig
 
 record CodeCtx where
     constructor MkCodeCtx
-    -- `types` only list types available for call_indirect. When we emit, we
-    -- append function types to the end, and emit function declarations that
-    -- refer to those appended types.
     functions : List FuncType
-    types : List FuncType
     locals : List ValueType
-    return : ResultType
 
 record FunctionCtx where
     constructor MkFunctionCtx
     functions : List FuncType
-    types : List FuncType
 
 FuncIdx : Type
 FuncIdx = Nat
-
-TypeIdx : Type
-TypeIdx = Nat
 
 LocalIdx : Type
 LocalIdx = Nat
 
 data HasFunc : CodeCtx -> FuncIdx -> FuncType -> Type where
-    HasFuncHere : HasFunc (MkCodeCtx (f :: _) ts ls ret) 0 f
+    HasFuncHere : HasFunc (MkCodeCtx (f :: _) ls) 0 f
     HasFuncThere :
-        HasFunc (MkCodeCtx fs ts ls ret) idx f
-        -> HasFunc (MkCodeCtx (_ :: fs) ts ls ret) (S idx) f
-
-data HasType : CodeCtx -> TypeIdx -> FuncType -> Type where
-    HasTypeHere : HasType (MkCodeCtx fs (t :: _) ls ret) 0 t
-    HasTypeThere :
-        HasType (MkCodeCtx fs ts ls ret) idx t
-        -> HasType (MkCodeCtx fs (_ :: ts) ls ret) (S idx) t
+        HasFunc (MkCodeCtx fs ls) idx f
+        -> HasFunc (MkCodeCtx (_ :: fs) ls) (S idx) f
 
 data HasLocal : CodeCtx -> LocalIdx -> ValueType -> Type where
-    HasLocalHere : HasLocal (MkCodeCtx fs ts (l :: _) ret) 0 l
+    HasLocalHere : HasLocal (MkCodeCtx fs (l :: _)) 0 l
     HasLocalThere :
-        HasLocal (MkCodeCtx fs ts ls ret) idx l
-        -> HasLocal (MkCodeCtx fs ts (_ :: ls) ret) (S idx) l
-
-data HasReturn : CodeCtx -> ResultType -> Type where
-    HasReturnCtx : HasReturn (MkCodeCtx fs ts ls ret) ret        
+        HasLocal (MkCodeCtx fs ls) idx l
+        -> HasLocal (MkCodeCtx fs (_ :: ls)) (S idx) l
 
 mutual
     data CallParams : CodeCtx -> List ValueType -> Type where
@@ -100,24 +82,25 @@ mutual
         MemoryGrow : Instr ctx (Some I32) -> Instr ctx (Some I32)
         Unreachable : Instr ctx ty
         If : (ty : ResultType) -> Instr ctx ty -> Instr ctx ty -> Instr ctx ty -> Instr ctx ty
-        Return : {v : HasReturn ctx ty} -> Instr ctx ty -> Instr ctx anyTy
         Call : (idx : FuncIdx) -> {v : HasFunc ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (result f)
-        CallIndirect : (idx : TypeIdx) -> {v : HasType ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (Some I32) -> Instr ctx (result f)
+        -- all virtual calls must have type [i32, i32] -> [i32]
+        CallIndirect : (fn : Instr ctx (Some I32)) -> Instr ctx (Some I32) -> Instr ctx (Some I32) -> Instr ctx (Some I32)
         Chain : Instr ctx None -> Instr ctx ty -> Instr ctx ty
 
-codeCtx : FunctionCtx -> ResultType -> List ValueType -> CodeCtx
-codeCtx fnCtx returnTy locals = MkCodeCtx (functions fnCtx) (types fnCtx) locals returnTy
+codeCtx : FunctionCtx -> List ValueType -> CodeCtx
+codeCtx fnCtx locals = MkCodeCtx (functions fnCtx) locals
 
 record Function (ctx : FunctionCtx) (ty : FuncType) where
     constructor MkFunction
     locals : List ValueType
-    body : Instr (codeCtx ctx (result ty) (args ty ++ locals)) (result ty)
+    body : Instr (codeCtx ctx (args ty ++ locals)) (result ty)
 
 data Functions : FunctionCtx -> List FuncType -> Type where
     FunctionsNil : Functions ctx []
     FunctionsCons : Function ctx t -> Functions ctx ts -> Functions ctx (t :: ts)
 
 -- module implicitly contains:
+-- * type at index 0 for virtual calls: [i32, i32] -> [i32]
 -- * single memory with initial size of 0 and unlimited maximum
 -- * single mutable i32 global
 -- * exports the last function and names it main
@@ -125,6 +108,5 @@ data Functions : FunctionCtx -> List FuncType -> Type where
 record Module where
     constructor MkModule
     decls : List FuncType
-    types : List FuncType
-    functions : Functions (MkFunctionCtx decls types) decls
+    functions : Functions (MkFunctionCtx decls) decls
     table : List (Fin (length decls))

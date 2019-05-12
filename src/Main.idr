@@ -10,7 +10,6 @@ wasmModule : Wasm.Module
 wasmModule =
     MkModule
         [MkFuncType [I32] (Some I32)]
-        []
         (FunctionsCons (MkFunction [] (Binop MulInt (LocalGet 0 {v = HasLocalHere}) (Const (ValueI32 5)))) FunctionsNil)
         []
 

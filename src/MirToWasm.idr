@@ -6,9 +6,6 @@ import Wasm
 
 %default total
 
-virtCallSig : FuncType
-virtCallSig = MkFuncType [I32, I32] (Some I32)
-
 mkArgs : Nat -> List Wasm.ValueType
 mkArgs Z = []
 mkArgs (S x) = I32 :: mkArgs x
@@ -215,10 +212,18 @@ mutual
                 Right (d ** prf) => (se ** AllocCons ae (rewrite prf in allocMoreList {x = d} es aes))
 
 data HasSlots : (slots : Nat) -> (ctx : CodeCtx) -> Type where
-    HasSlotsZ : HasSlots Z (MkCodeCtx functions types locals return)
+    HasSlotsZ : HasSlots Z (MkCodeCtx functions locals)
     HasSlotsS :
-        HasSlots s (MkCodeCtx functions types locals return) ->
-        HasSlots (S x) (MkCodeCtx functions types (I32 :: locals) return)
+        HasSlots s (MkCodeCtx functions locals) ->
+        HasSlots (S x) (MkCodeCtx functions (I32 :: locals))
+
+-- a grab bag of proofs about code context
+data UsefulCtx : (slots : Nat) -> (ctx : CodeCtx) -> Type where
+    MkUsefulCtx :
+        {slots : Nat} ->
+        (ctx : CodeCtx) ->
+        (hasSlots : HasSlots slots ctx) ->
+        UsefulCtx slots ctx
 
 hasLocal :
     {slots : Nat} ->
@@ -362,12 +367,8 @@ translateDefsGo :
 translateDefsGo ctx [] = FunctionsNil
 translateDefsGo ctx (d :: ds) = FunctionsCons (translateDef ctx d) (translateDefsGo ctx ds)
 
-translateDefs : (defs : List MDef) -> Functions (MkFunctionCtx (translateDecls defs) [MirToWasm.virtCallSig]) (translateDecls defs)
-translateDefs defs =
-    let
-        ctx = MkFunctionCtx (translateDecls defs) [virtCallSig]
-    in
-        translateDefsGo ctx defs
+translateDefs : (defs : List MDef) -> Functions (MkFunctionCtx (translateDecls defs)) (translateDecls defs)
+translateDefs defs = translateDefsGo (MkFunctionCtx (translateDecls defs)) defs
 
 export
 translateModule : Mir.Module -> Wasm.Module
@@ -378,6 +379,5 @@ translateModule mod =
     in
         MkModule
             wasmDecls
-            [virtCallSig]
             (translateDefs mdefs)
             (makeTable (length wasmDecls))
