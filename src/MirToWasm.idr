@@ -75,6 +75,9 @@ mutual
     allocMore (CallVirt f a b) (AllocCallVirt x y z) = AllocCallVirt (allocMore f x) (allocMore a y) (allocMore b z)
     allocMore (Binop op a b) (AllocBinop x y) = AllocBinop (allocMore a x) (allocMore b y)
 
+-- Returns which value is bigger and the difference between them.
+-- In retrospect, it would have been better to just return ((a, b) ** a + x = b + y),
+-- so that you wouldn't need to match and do different rewrites in the two cases.
 diff : (x : Nat) -> (y : Nat) -> Either (a ** a + x = y) (a ** x = a + y)
 diff Z y = Left (y ** rewrite plusZeroRightNeutral y in Refl)
 diff x Z = Right (x ** rewrite plusZeroRightNeutral x in Refl)
@@ -82,6 +85,9 @@ diff (S x) (S y) = case diff x y of
     Left (a ** prf) => Left (a ** rewrite sBeforePlus a x in eqSucc (plus a x) y prf)
     Right (a ** prf) => Right (a ** rewrite sBeforePlus a y in eqSucc x (plus a y) prf)
 
+-- And especially here, a return of ((a, b, c, max) ** (a + x = max, b + y = max, c + z = max))
+-- would have been so much better.
+-- But this works, so there's no reason to waste time simplifying it.
 diff3 : (x : Nat) -> (y : Nat) -> (z : Nat) -> Either ((a ** a + y = x), (b ** b + z = x)) (Either ((a ** a + x = y), (b ** b + z = y)) ((a ** a + x = z), (b ** b + y = z)))
 diff3 Z y z = case diff y z of
     Left (d ** prf) => Right (Right ((z ** rewrite plusZeroRightNeutral z in Refl), (d ** prf)))
@@ -208,49 +214,140 @@ mutual
                 Left (d ** prf) => (ses ** AllocCons (rewrite sym prf in allocMore {x = d} e ae) aes)
                 Right (d ** prf) => (se ** AllocCons ae (rewrite prf in allocMoreList {x = d} es aes))
 
--- data HasSlots : (slots : Nat) -> (ctx : CodeCtx) -> Type where
---     HasSlotsZ : HasSlots Z (MkCodeCtx functions types locals return)
---     HasSlotsS :
---         HasSlots s (MkCodeCtx functions types locals return) ->
---         HasSlots (S x) (MkCodeCtx functions types (I32 :: locals) return)
+data HasSlots : (slots : Nat) -> (ctx : CodeCtx) -> Type where
+    HasSlotsZ : HasSlots Z (MkCodeCtx functions types locals return)
+    HasSlotsS :
+        HasSlots s (MkCodeCtx functions types locals return) ->
+        HasSlots (S x) (MkCodeCtx functions types (I32 :: locals) return)
 
--- weaken : {slots : Nat} -> {extra : Nat} -> HasSlots (slots + extra) ctx -> HasSlots slots ctx
--- -- weaken {extra = Z} hasSlots = hasSlots
--- -- weaken {slots = Z} {extra = S ex} (HasSlotsS x) = HasSlotsZ
--- -- weaken {slots = S sl} {extra = S ex} (HasSlotsS x) = ?rhs_2
+hasLocal :
+    {slots : Nat} ->
+    {ctx : CodeCtx} ->
+    (prf : HasSlots slots ctx) ->
+    (idx : Fin slots) ->
+    HasLocal ctx (finToNat idx) I32
+hasLocal prf idx = ?hasLocal_rhs
 
--- localIdx : (activeSlots : Nat) -> (idx : Fin activeSlots) -> Nat
--- localIdx Z FZ impossible
--- localIdx Z (FS _) impossible
--- localIdx (S k) FZ = k
--- localIdx (S k) (FS x) = localIdx k x
-
--- hasLocal :
---     (activeSlots : Nat) ->
---     (idx : Fin activeSlots) ->
---     (ctx : CodeCtx) ->
---     HasSlots activeSlots ctx ->
---     HasLocal ctx (localIdx activeSlots idx) I32
--- hasLocal activeSlots idx ctx prf = ?hasLocal_rhs
-
--- translateWithAlloc :
---     (extraSlots : Nat) ->
---     (activeSlots : Nat) ->
---     (ctx : CodeCtx) ->
---     (hasSlots : HasSlots (activeSlots + extraSlots) ctx) ->
---     (exp : MExp ty activeSlots) ->
---     (alloc : AllocExp exp extraSlots) ->
---     Instr ctx (Some I32)
--- translateWithAlloc extraSlots activeSlots ctx hasSlots (Const x) AllocConst = Const (ValueI32 x)
--- translateWithAlloc extraSlots activeSlots ctx hasSlots (Local x) AllocLocal = LocalGet (localIdx activeSlots x) {v = hasLocal activeSlots x ctx (weaken hasSlots)}
--- translateWithAlloc extraSlots activeSlots ctx hasSlots (Let x y) alloc = ?translate_rhs_3
--- translateWithAlloc extraSlots activeSlots ctx hasSlots (Create x xs) alloc = ?translate_rhs_4
--- translateWithAlloc extraSlots activeSlots ctx hasSlots (Field x y) alloc = ?translate_rhs_5
--- translateWithAlloc extraSlots activeSlots ctx hasSlots (Tag x) alloc = ?translate_rhs_6
--- translateWithAlloc extraSlots activeSlots ctx hasSlots (If x y z) alloc = ?translate_rhs_7
--- translateWithAlloc extraSlots activeSlots ctx hasSlots (Call k xs) alloc = ?translate_rhs_8
--- translateWithAlloc extraSlots activeSlots ctx hasSlots (CallVirt x y z) alloc = ?translate_rhs_9
--- translateWithAlloc extraSlots activeSlots ctx hasSlots (Binop x y z) alloc = ?translate_rhs_10
+translateWithAlloc :
+    {slots : Nat} ->
+    {ctx : CodeCtx} ->
+    (hasSlots : HasSlots slots ctx) ->
+    (exp : MExp ty locals) ->
+    (alloc : AllocExp exp slots) ->
+    Instr ctx (Some I32)
+translateWithAlloc hasSlots (Const x) AllocConst = Const (ValueI32 x)
+translateWithAlloc hasSlots (Local x) (AllocLocal a) = LocalGet (finToNat a) {v = hasLocal hasSlots a}
+translateWithAlloc hasSlots (Let x y) (AllocLet a b c) =
+    let
+        init = translateWithAlloc hasSlots x b
+        body = translateWithAlloc hasSlots y c
+    in
+        Chain
+            (LocalSet (finToNat a) {v = hasLocal hasSlots a} init)
+            body
+translateWithAlloc hasSlots (Create x xs) alloc = ?translate_create
+translateWithAlloc hasSlots (Field x y) (AllocField a b) =
+    let
+        obj = translateWithAlloc hasSlots x a
+        idx = translateWithAlloc hasSlots y b
+        offset = Wasm.Binop MulInt (Const (ValueI32 4)) idx
+        addr = Wasm.Binop AddInt obj offset
+    in
+        Load addr
+translateWithAlloc hasSlots (Tag x) (AllocTag y) =
+    let
+        objAddr = translateWithAlloc hasSlots x y
+    in
+        Load objAddr
+translateWithAlloc hasSlots (If x y z) (AllocIf a b c) =
+    let
+        cond = translateWithAlloc hasSlots x a
+        t = translateWithAlloc hasSlots y b
+        e = translateWithAlloc hasSlots z c
+    in
+        If (Some I32) cond t e
+translateWithAlloc hasSlots (Call k xs) alloc = ?translate_call
+translateWithAlloc hasSlots (CallVirt x y z) (AllocCallVirt a b c) =
+    let
+        fn = translateWithAlloc hasSlots x a
+        arg1 = translateWithAlloc hasSlots y b
+        arg2 = translateWithAlloc hasSlots z c
+    in
+        ?callvirt_impl
+translateWithAlloc hasSlots (Binop Add y z) (AllocBinop a b) =
+    let
+        lhs = translateWithAlloc hasSlots y a
+        rhs = translateWithAlloc hasSlots z b
+    in
+        Binop AddInt lhs rhs
+translateWithAlloc hasSlots (Binop Sub y z) (AllocBinop a b) =
+    let
+        lhs = translateWithAlloc hasSlots y a
+        rhs = translateWithAlloc hasSlots z b
+    in
+        Binop SubInt lhs rhs
+translateWithAlloc hasSlots (Binop Mul y z) (AllocBinop a b) =
+    let
+        lhs = translateWithAlloc hasSlots y a
+        rhs = translateWithAlloc hasSlots z b
+    in
+        Binop MulInt lhs rhs
+translateWithAlloc hasSlots (Binop Div y z) (AllocBinop a b) =
+    let
+        lhs = translateWithAlloc hasSlots y a
+        rhs = translateWithAlloc hasSlots z b
+    in
+        -- we actually don't know if this is supposed to be signed or unsigned
+        -- division, so just assume signed because we just keep assuming that
+        -- stuff won't overflow
+        Binop (DivInt Signed) lhs rhs
+translateWithAlloc hasSlots (Binop Rem y z) (AllocBinop a b) =
+    let
+        lhs = translateWithAlloc hasSlots y a
+        rhs = translateWithAlloc hasSlots z b
+    in
+        -- same as above
+        Binop (RemInt Signed) lhs rhs
+translateWithAlloc hasSlots (Binop Eq y z) (AllocBinop a b) =
+    let
+        lhs = translateWithAlloc hasSlots y a
+        rhs = translateWithAlloc hasSlots z b
+    in
+        Relop EqInt lhs rhs
+translateWithAlloc hasSlots (Binop Ne y z) (AllocBinop a b) =
+    let
+        lhs = translateWithAlloc hasSlots y a
+        rhs = translateWithAlloc hasSlots z b
+    in
+        Relop NeInt lhs rhs
+translateWithAlloc hasSlots (Binop Lt y z) (AllocBinop a b) =
+    let
+        lhs = translateWithAlloc hasSlots y a
+        rhs = translateWithAlloc hasSlots z b
+    in
+        -- save as above
+        Relop (LtInt Signed) lhs rhs
+translateWithAlloc hasSlots (Binop Le y z) (AllocBinop a b) =
+    let
+        lhs = translateWithAlloc hasSlots y a
+        rhs = translateWithAlloc hasSlots z b
+    in
+        -- save as above
+        Relop (LeInt Signed) lhs rhs
+translateWithAlloc hasSlots (Binop Gt y z) (AllocBinop a b) =
+    let
+        lhs = translateWithAlloc hasSlots y a
+        rhs = translateWithAlloc hasSlots z b
+    in
+        -- save as above
+        Relop (GtInt Signed) lhs rhs
+translateWithAlloc hasSlots (Binop Ge y z) (AllocBinop a b) =
+    let
+        lhs = translateWithAlloc hasSlots y a
+        rhs = translateWithAlloc hasSlots z b
+    in
+        -- save as above
+        Relop (GeInt Signed) lhs rhs
 
 translateDef :
     (ctx : FunctionCtx) ->

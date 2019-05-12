@@ -99,7 +99,7 @@ mutual
         MemorySize : Instr ctx (Some I32)
         MemoryGrow : Instr ctx (Some I32) -> Instr ctx (Some I32)
         Unreachable : Instr ctx ty
-        If : (ty : ResultType) -> Instr ctx ty -> Instr ctx ty -> Instr ctx ty
+        If : (ty : ResultType) -> Instr ctx ty -> Instr ctx ty -> Instr ctx ty -> Instr ctx ty
         Return : {v : HasReturn ctx ty} -> Instr ctx ty -> Instr ctx anyTy
         Call : (idx : FuncIdx) -> {v : HasFunc ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (result f)
         CallIndirect : (idx : TypeIdx) -> {v : HasType ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (Some I32) -> Instr ctx (result f)

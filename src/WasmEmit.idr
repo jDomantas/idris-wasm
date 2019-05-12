@@ -87,7 +87,7 @@ mutual
         emit MemorySize = [0x3F, 0x00]
         emit (MemoryGrow pages) = emit pages ++ [0x40, 0x00]
         emit Unreachable = [0x00]
-        emit (If ty t e) = [0x04] ++ emit ty ++ emit t ++ [0x05] ++ emit e ++ [0x0B]
+        emit (If ty c t e) = emit c ++ [0x04] ++ emit ty ++ emit t ++ [0x05] ++ emit e ++ [0x0B]
         emit (Return val) = emit val ++ [0x0F]
         emit (Call idx params) = emit params ++ [0x10] ++ emit idx
         emit (CallIndirect ty params idx) = emit params ++ emit idx ++ [0x11] ++ emit ty ++ [0x00]
