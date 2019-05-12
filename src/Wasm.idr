@@ -77,7 +77,7 @@ mutual
         GlobalSet : Instr ctx (Some I32) -> Instr ctx None
         -- only stores and loads for i32, and memarg is always {offset: 0, align: 4}
         Load : Instr ctx (Some I32) -> Instr ctx (Some I32)
-        Store : Instr ctx (Some I32) -> Instr ctx (Some I32) -> Instr ctx None
+        Store : (val : Instr ctx (Some I32)) -> (addr : Instr ctx (Some I32)) -> Instr ctx None
         MemorySize : Instr ctx (Some I32)
         MemoryGrow : Instr ctx (Some I32) -> Instr ctx (Some I32)
         Unreachable : Instr ctx ty
