@@ -69,9 +69,8 @@ mutual
         Binop : IntBinaryOp -> Instr ctx (Some ty) -> Instr ctx (Some ty) -> Instr ctx (Some ty)
         Testop : IntTestOp -> Instr ctx (Some ty) -> Instr ctx (Some I32)
         Relop : IntRelOp -> Instr ctx (Some ty) -> Instr ctx (Some ty) -> Instr ctx (Some I32)
-        LocalGet : (idx : LocalIdx) -> {v : HasLocal ctx idx ty} -> Instr ctx (Some ty)
-        LocalSet : (idx : LocalIdx) -> {v : HasLocal ctx idx ty} -> Instr ctx (Some ty) -> Instr ctx None
-        LocalTee : (idx : LocalIdx) -> {v : HasLocal ctx idx ty} -> Instr ctx (Some ty) -> Instr ctx (Some ty)
+        LocalGet : (idx : LocalIdx) -> {prf : HasLocal ctx idx ty} -> Instr ctx (Some ty)
+        LocalSet : (idx : LocalIdx) -> {prf : HasLocal ctx idx ty} -> Instr ctx (Some ty) -> Instr ctx None
         -- module always has one mutable i32 global
         GlobalGet : Instr ctx (Some I32)
         GlobalSet : Instr ctx (Some I32) -> Instr ctx None

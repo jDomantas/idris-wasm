@@ -79,7 +79,6 @@ mutual
         emit (Relop (GeInt Unsigned) a b) = emit a ++ emit b ++ [0x4F]
         emit (LocalGet idx) = [0x20] ++ emit idx
         emit (LocalSet idx val) = emit val ++ [0x21] ++ emit idx
-        emit (LocalTee idx val) = emit val ++ [0x22] ++ emit idx
         emit GlobalGet = [0x23, 0x00]
         emit (GlobalSet val) = emit val ++ [0x24, 0x00]
         emit (Load addr) = emit addr ++ [0x28, 0x02, 0x00]

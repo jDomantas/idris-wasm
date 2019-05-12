@@ -241,14 +241,14 @@ translateWithAlloc :
     (alloc : AllocExp exp slots) ->
     Instr ctx (Some I32)
 translateWithAlloc hasSlots (Const x) AllocConst = Const (ValueI32 x)
-translateWithAlloc hasSlots (Local x) (AllocLocal a) = LocalGet (finToNat a) {v = hasLocal hasSlots a}
+translateWithAlloc hasSlots (Local x) (AllocLocal a) = LocalGet (finToNat a) {prf = hasLocal hasSlots a}
 translateWithAlloc hasSlots (Let x y) (AllocLet a b c) =
     let
         init = translateWithAlloc hasSlots x b
         body = translateWithAlloc hasSlots y c
     in
         Chain
-            (LocalSet (finToNat a) {v = hasLocal hasSlots a} init)
+            (LocalSet (finToNat a) {prf = hasLocal hasSlots a} init)
             body
 translateWithAlloc hasSlots (Create x xs) alloc = ?translate_create
 translateWithAlloc hasSlots (Field x y) (AllocField a b) =
