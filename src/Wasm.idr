@@ -103,6 +103,7 @@ mutual
         Return : {v : HasReturn ctx ty} -> Instr ctx ty -> Instr ctx anyTy
         Call : (idx : FuncIdx) -> {v : HasFunc ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (result f)
         CallIndirect : (idx : TypeIdx) -> {v : HasType ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (Some I32) -> Instr ctx (result f)
+        Chain : Instr ctx None -> Instr ctx ty -> Instr ctx ty
 
     data Expr : CodeCtx -> ResultType -> Type where
         ExprEmpty : Expr ctx None

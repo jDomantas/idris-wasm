@@ -30,8 +30,8 @@ makeTable defs = reverse (go defs)
 mutual
     data AllocExp : MExp ty locals -> (slots : Nat) -> Type where
         AllocConst : AllocExp (Const val) slots
-        AllocLocal : AllocExp (Local idx) slots
-        AllocLet : AllocExp v (S slots) -> AllocExp e slots -> AllocExp (Let v e) (S slots)
+        AllocLocal : Fin slots -> AllocExp (Local idx) slots
+        AllocLet : Fin slots -> AllocExp v slots -> AllocExp e slots -> AllocExp (Let v e) slots
         AllocCreate : AllocExp t slots -> AllocList fields slots -> AllocExp (Create t fields) slots
         AllocField : AllocExp o slots -> AllocExp f slots -> AllocExp (Field o f) slots
         AllocTag : AllocExp o slots -> AllocExp (Tag o) slots
@@ -59,10 +59,14 @@ mutual
     allocMoreList (x :: xs) (AllocCons a as) = AllocCons (allocMore x a) (allocMoreList xs as)
 
     allocMore (Const val) AllocConst = AllocConst
-    allocMore (Local idx) AllocLocal = AllocLocal
-    allocMore {x = x} {slots = S s} (Let v e) (AllocLet a b) =
-        rewrite sBeforePlus x s in
-        AllocLet (rewrite sAfterPlus x s in allocMore v a) (allocMore e b)
+    allocMore {x = x} {slots = slots} (Local idx) (AllocLocal place) =
+        AllocLocal
+            (rewrite plusCommutative x slots in weakenN x place)
+    allocMore {x = x} {slots = slots} (Let v e) (AllocLet place a b) =
+        AllocLet
+            (rewrite plusCommutative x slots in weakenN x place)
+            (allocMore v a)
+            (allocMore e b)
     allocMore (Create t fields) (AllocCreate x y) = AllocCreate (allocMore t x) (allocMoreList fields y)
     allocMore (Field o f) (AllocField x y) = AllocField (allocMore o x) (allocMore f y)
     allocMore (Tag o) (AllocTag x) = AllocTag (allocMore o x)
@@ -93,21 +97,60 @@ diff3 (S x) (S y) (S z) = case diff3 x y z of
     Right (Left ((a ** p1), (b ** p2))) => Right (Left ((a ** rewrite sBeforePlus a x in eqSucc (plus a x) y p1), (b ** rewrite sBeforePlus b z in eqSucc (plus b z) y p2)))
     Right (Right ((a ** p1), (b ** p2))) => Right (Right ((a ** rewrite sBeforePlus a x in eqSucc (plus a x) z p1), (b ** rewrite sBeforePlus b y in eqSucc (plus b y) z p2)))
 
+flip : {lim : Nat} -> (x : Fin lim) -> Fin lim
+flip {lim = Z} FZ impossible
+flip {lim = Z} (FS _) impossible
+flip {lim = (S k)} FZ = last
+flip {lim = (S k)} (FS x) = shift 1 (flip {lim = k} x)
+
+insertSlotFin : (idx : Nat) -> Fin slots -> Fin (S slots)
+insertSlotFin Z x = FS x
+insertSlotFin (S k) FZ = FZ
+insertSlotFin (S k) (FS x) = FS (insertSlotFin k x)
+
 mutual
-    allocExp : (exp : MExp ty locals) -> (slots : Nat ** AllocExp exp slots)
-    allocList : (exps : List (MExp ty locals)) -> (slots : Nat ** AllocList exps slots)
+    insertSlot : (idx : Nat) -> AllocExp exp slots -> AllocExp exp (S slots)
+    insertSlotList : (idx : Nat) -> AllocList exps slots -> AllocList exps (S slots)
+    
+    insertSlotList idx AllocNil = AllocNil
+    insertSlotList idx (AllocCons x y) = AllocCons (insertSlot idx x) (insertSlotList idx y)
+
+    insertSlot idx AllocConst = AllocConst
+    insertSlot idx (AllocLocal y) = AllocLocal (insertSlotFin idx y)
+    insertSlot idx (AllocLet x y z) = AllocLet (insertSlotFin idx x) (insertSlot idx y) (insertSlot idx z)
+    insertSlot idx (AllocCreate x y) = AllocCreate (insertSlot idx x) (insertSlotList idx y)
+    insertSlot idx (AllocField x y) = AllocField (insertSlot idx x) (insertSlot idx y)
+    insertSlot idx (AllocTag x) = AllocTag (insertSlot idx x)
+    insertSlot idx (AllocIf x y z) = AllocIf (insertSlot idx x) (insertSlot idx y) (insertSlot idx z)
+    insertSlot idx (AllocCall x) = AllocCall (insertSlotList idx x)
+    insertSlot idx (AllocCallVirt x y z) = AllocCallVirt (insertSlot idx x) (insertSlot idx y) (insertSlot idx z)
+    insertSlot idx (AllocBinop x y) = AllocBinop (insertSlot idx x) (insertSlot idx y)
+
+mutual
+    allocExp : {locals : Nat} -> (exp : MExp ty locals) -> (slots : Nat ** AllocExp exp slots)
+    allocList : {locals : Nat} -> (exps : List (MExp ty locals)) -> (slots : Nat ** AllocList exps slots)
 
     allocExp (Const x) = (0 ** AllocConst)
-    allocExp (Local x) = (0 ** AllocLocal)
-    allocExp (Let a b) =
+    allocExp {locals = locals} (Local x) = (locals ** AllocLocal (flip x))
+    allocExp {locals = locals} (Let a b) =
         let
-            (sa ** aa) = allocExp a
+            (sa ** aaf) = allocExp a
             (sb ** ab) = allocExp b
+            aa = insertSlot locals aaf
+            place = last {n = locals}
         in
-            case diff sa sb of
-                Left (d ** prf) => (S sb ** AllocLet (rewrite sym prf in allocMore {x = S d} a aa) ab)
-                Right (Z ** prf) => (S sb ** AllocLet (rewrite sym prf in allocMore {x = 1} a aa) ab)
-                Right (S d ** prf) => (sa ** rewrite prf in (AllocLet (rewrite sym prf in aa) (allocMore {x = d} b ab))) --(sa ** AllocLet aa (rewrite prf in allocMore {x = d} b ab))
+            case diff3 (S locals) (S sa) sb of
+                Left ((da ** prf1), (db ** prf2)) => (S locals ** AllocLet place (rewrite sym prf1 in allocMore {x = da} a aa) (rewrite sym prf2 in allocMore {x = db} b ab))
+                Right (Left ((da ** prf1), (db ** prf2))) => (S sa **
+                    AllocLet
+                        (rewrite sym prf1 in rewrite plusCommutative da (S locals) in weakenN da place)
+                        aa
+                        (rewrite sym prf2 in allocMore {x = db} b ab))
+                Right (Right ((da ** prf1), (db ** prf2))) => (sb **
+                    AllocLet
+                        (rewrite sym prf1 in rewrite plusCommutative da (S locals) in weakenN da place)
+                        (rewrite sym prf2 in allocMore {x = db} a aa)
+                        ab)
     allocExp (Create x xs) =
         let
             (sx ** ax) = allocExp x
@@ -165,6 +208,49 @@ mutual
                 Left (d ** prf) => (ses ** AllocCons (rewrite sym prf in allocMore {x = d} e ae) aes)
                 Right (d ** prf) => (se ** AllocCons ae (rewrite prf in allocMoreList {x = d} es aes))
 
+-- data HasSlots : (slots : Nat) -> (ctx : CodeCtx) -> Type where
+--     HasSlotsZ : HasSlots Z (MkCodeCtx functions types locals return)
+--     HasSlotsS :
+--         HasSlots s (MkCodeCtx functions types locals return) ->
+--         HasSlots (S x) (MkCodeCtx functions types (I32 :: locals) return)
+
+-- weaken : {slots : Nat} -> {extra : Nat} -> HasSlots (slots + extra) ctx -> HasSlots slots ctx
+-- -- weaken {extra = Z} hasSlots = hasSlots
+-- -- weaken {slots = Z} {extra = S ex} (HasSlotsS x) = HasSlotsZ
+-- -- weaken {slots = S sl} {extra = S ex} (HasSlotsS x) = ?rhs_2
+
+-- localIdx : (activeSlots : Nat) -> (idx : Fin activeSlots) -> Nat
+-- localIdx Z FZ impossible
+-- localIdx Z (FS _) impossible
+-- localIdx (S k) FZ = k
+-- localIdx (S k) (FS x) = localIdx k x
+
+-- hasLocal :
+--     (activeSlots : Nat) ->
+--     (idx : Fin activeSlots) ->
+--     (ctx : CodeCtx) ->
+--     HasSlots activeSlots ctx ->
+--     HasLocal ctx (localIdx activeSlots idx) I32
+-- hasLocal activeSlots idx ctx prf = ?hasLocal_rhs
+
+-- translateWithAlloc :
+--     (extraSlots : Nat) ->
+--     (activeSlots : Nat) ->
+--     (ctx : CodeCtx) ->
+--     (hasSlots : HasSlots (activeSlots + extraSlots) ctx) ->
+--     (exp : MExp ty activeSlots) ->
+--     (alloc : AllocExp exp extraSlots) ->
+--     Instr ctx (Some I32)
+-- translateWithAlloc extraSlots activeSlots ctx hasSlots (Const x) AllocConst = Const (ValueI32 x)
+-- translateWithAlloc extraSlots activeSlots ctx hasSlots (Local x) AllocLocal = LocalGet (localIdx activeSlots x) {v = hasLocal activeSlots x ctx (weaken hasSlots)}
+-- translateWithAlloc extraSlots activeSlots ctx hasSlots (Let x y) alloc = ?translate_rhs_3
+-- translateWithAlloc extraSlots activeSlots ctx hasSlots (Create x xs) alloc = ?translate_rhs_4
+-- translateWithAlloc extraSlots activeSlots ctx hasSlots (Field x y) alloc = ?translate_rhs_5
+-- translateWithAlloc extraSlots activeSlots ctx hasSlots (Tag x) alloc = ?translate_rhs_6
+-- translateWithAlloc extraSlots activeSlots ctx hasSlots (If x y z) alloc = ?translate_rhs_7
+-- translateWithAlloc extraSlots activeSlots ctx hasSlots (Call k xs) alloc = ?translate_rhs_8
+-- translateWithAlloc extraSlots activeSlots ctx hasSlots (CallVirt x y z) alloc = ?translate_rhs_9
+-- translateWithAlloc extraSlots activeSlots ctx hasSlots (Binop x y z) alloc = ?translate_rhs_10
 
 translateDef :
     (ctx : FunctionCtx) ->

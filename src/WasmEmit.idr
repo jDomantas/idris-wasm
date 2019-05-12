@@ -91,6 +91,7 @@ mutual
         emit (Return val) = emit val ++ [0x0F]
         emit (Call idx params) = emit params ++ [0x10] ++ emit idx
         emit (CallIndirect ty params idx) = emit params ++ emit idx ++ [0x11] ++ emit ty ++ [0x00]
+        emit (Chain a b) = emit a ++ emit b
 
     Emit (Expr ctx ty) where
         emit ExprEmpty = []
