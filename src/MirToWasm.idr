@@ -249,14 +249,6 @@ data HasSlots : (slots : Nat) -> (ctx : CodeCtx) -> Type where
         HasSlots s (MkCodeCtx functions locals) ->
         HasSlots (S x) (MkCodeCtx functions (I32 :: locals))
 
--- a grab bag of proofs about code context
-data UsefulCtx : (slots : Nat) -> (ctx : CodeCtx) -> Type where
-    MkUsefulCtx :
-        {slots : Nat} ->
-        (ctx : CodeCtx) ->
-        (hasSlots : HasSlots slots ctx) ->
-        UsefulCtx slots ctx
-
 hasLocal :
     {slots : Nat} ->
     {ctx : CodeCtx} ->
@@ -438,11 +430,32 @@ mutual
             -- save as above
             Relop (GeInt Signed) lhs rhs
 
+makeLocals : (count : Nat) -> List Wasm.ValueType
+makeLocals Z = []
+makeLocals (S x) = I32 :: makeLocals x
+
+proveHasSlots : (slots : Nat) -> HasSlots slots (MkCodeCtx functions (makeLocals slots))
+proveHasSlots Z = HasSlotsZ
+proveHasSlots (S x) = HasSlotsS (proveHasSlots x)
+
 translateDef :
     (ctx : FunctionCtx) ->
     (def : MDef) ->
     Function ctx (MkFuncType (mkArgs (args def)) (Some I32))
-translateDef ctx def = MkFunction [] (Const (ValueI32 0))
+translateDef ctx (MkMDef argCount body) =
+    let
+        (slots ** alloc) = allocExp body
+        locals = makeLocals slots
+        codeCtx = MkCodeCtx (functions ctx) locals
+        hasSlots = proveHasSlots slots
+        translatedBody = translateWithAlloc
+            {slots = slots}
+            {ctx = codeCtx}
+            hasSlots
+            body
+            alloc
+    in
+        MkFunction locals translatedBody
 
 translateDefsGo :
     (ctx : FunctionCtx) ->
