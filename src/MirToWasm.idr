@@ -6,12 +6,17 @@ import Wasm
 
 %default total
 
-mkArgs : Nat -> List Wasm.ValueType
-mkArgs Z = []
-mkArgs (S x) = I32 :: mkArgs x
+localList : (count : Nat) -> List Wasm.ValueType
+localList Z = []
+localList (S x) = I32 :: localList x
+
+localListSize : (a : Nat) -> (b : Nat) -> (c : Nat) -> (a + b = c) -> (localList a ++ localList b = localList c)
+localListSize Z b c prf = rewrite prf in Refl
+localListSize (S _) _ Z Refl impossible
+localListSize (S a) b (S c) prf = rewrite localListSize a b c (succInjective (a + b) c prf) in Refl
 
 translateDecl : MDef -> FuncType
-translateDecl def = MkFuncType (mkArgs (args def)) (Some I32)
+translateDecl def = MkFuncType (localList (args def)) (Some I32)
 
 translateDecls : List MDef -> List FuncType
 translateDecls [] = []
@@ -58,15 +63,15 @@ mutual
     allocMoreList (x :: xs) (AllocCons a as) = AllocCons (allocMore x a) (allocMoreList xs as)
 
     allocMore (Const val) AllocConst = AllocConst
-    allocMore {x} {slots = slots} (Local idx) (AllocLocal place) =
+    allocMore {x} {slots} (Local idx) (AllocLocal place) =
         AllocLocal
             (rewrite plusCommutative x slots in weakenN x place)
-    allocMore {x} {slots = slots} (Let v e) (AllocLet place a b) =
+    allocMore {x} {slots} (Let v e) (AllocLet place a b) =
         AllocLet
             (rewrite plusCommutative x slots in weakenN x place)
             (allocMore v a)
             (allocMore e b)
-    allocMore {x} {slots = slots} (Create t fields) (AllocCreate place y z) =
+    allocMore {x} {slots} (Create t fields) (AllocCreate place y z) =
         AllocCreate
             (rewrite plusCommutative x slots in weakenN x place)
             (allocMore t y)
@@ -187,13 +192,6 @@ mutual
                         (rewrite sym prf1 in rewrite plusCommutative da (S locals) in weakenN da place)
                         (rewrite sym prf2 in allocMore {x = db} x ax)
                         axs)
-        -- let
-        --     (sx ** ax) = allocExp x
-        --     (sxs ** axs) = allocList xs
-        -- in
-        --     case diff sx sxs of
-        --         Left (d ** prf) => (sxs ** AllocCreate (rewrite sym prf in allocMore {x = d} x ax) axs)
-        --         Right (d ** prf) => (sx ** AllocCreate ax (rewrite prf in allocMoreList {x = d} xs axs))
     allocExp (Field a b) =
         let
             (sa ** aa) = allocExp a
@@ -430,32 +428,47 @@ mutual
             -- save as above
             Relop (GeInt Signed) lhs rhs
 
-makeLocals : (count : Nat) -> List Wasm.ValueType
-makeLocals Z = []
-makeLocals (S x) = I32 :: makeLocals x
-
-proveHasSlots : (slots : Nat) -> HasSlots slots (MkCodeCtx functions (makeLocals slots))
+proveHasSlots : (slots : Nat) -> HasSlots slots (MkCodeCtx functions (localList slots))
 proveHasSlots Z = HasSlotsZ
 proveHasSlots (S x) = HasSlotsS (proveHasSlots x)
+
+mangleProofIntoShape : {a : Nat} -> {b : Nat} -> {c : Nat} -> (c = a + b) -> (b + a = c)
+mangleProofIntoShape {a} {b} prf = rewrite plusCommutative b a in sym prf
 
 translateDef :
     (ctx : FunctionCtx) ->
     (def : MDef) ->
-    Function ctx (MkFuncType (mkArgs (args def)) (Some I32))
+    Function ctx (MkFuncType (localList (args def)) (Some I32))
 translateDef ctx (MkMDef argCount body) =
     let
         (slots ** alloc) = allocExp body
-        locals = makeLocals slots
-        codeCtx = MkCodeCtx (functions ctx) locals
         hasSlots = proveHasSlots slots
         translatedBody = translateWithAlloc
             {slots = slots}
-            {ctx = codeCtx}
+            {ctx = MkCodeCtx (functions ctx) (localList slots)}
             hasSlots
             body
             alloc
     in
-        MkFunction locals translatedBody
+        case diff slots argCount of
+            Left (extraSlots ** prf) =>
+                let
+                    expanded = allocMore {x = extraSlots} {slots = slots} body alloc
+                    hasSlots2 = proveHasSlots argCount
+                    translatedBody2 = translateWithAlloc
+                        {slots = argCount}
+                        {ctx = MkCodeCtx (functions ctx) (localList argCount)}
+                        hasSlots2
+                        body
+                        (rewrite sym prf in expanded)
+                in
+                    MkFunction
+                        []
+                        (rewrite appendNilRightNeutral (localList argCount) in translatedBody2)
+            Right (nonArgLocals ** prf) =>
+                MkFunction
+                    (localList nonArgLocals)
+                    (rewrite localListSize argCount nonArgLocals slots (mangleProofIntoShape prf) in translatedBody)
 
 translateDefsGo :
     (ctx : FunctionCtx) ->
