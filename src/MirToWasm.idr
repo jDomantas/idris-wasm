@@ -245,7 +245,7 @@ data HasSlots : (slots : Nat) -> (ctx : CodeCtx) -> Type where
     HasSlotsZ : HasSlots Z (MkCodeCtx functions locals)
     HasSlotsS :
         HasSlots s (MkCodeCtx functions locals) ->
-        HasSlots (S x) (MkCodeCtx functions (I32 :: locals))
+        HasSlots (S s) (MkCodeCtx functions (I32 :: locals))
 
 hasLocal :
     {slots : Nat} ->
@@ -253,7 +253,10 @@ hasLocal :
     (prf : HasSlots slots ctx) ->
     (idx : Fin slots) ->
     HasLocal ctx (finToNat idx) I32
-hasLocal prf idx = ?hasLocal_rhs
+hasLocal {slots = Z} {ctx = (MkCodeCtx _ _)} HasSlotsZ FZ impossible
+hasLocal {slots = Z} {ctx = (MkCodeCtx _ _)} HasSlotsZ (FS _) impossible
+hasLocal {slots = (S s)} {ctx = (MkCodeCtx functions (I32 :: xs))} (HasSlotsS x) FZ = HasLocalHere
+hasLocal {slots = (S s)} {ctx = (MkCodeCtx functions (I32 :: xs))} (HasSlotsS x) (FS y) = HasLocalThere (hasLocal x y)
 
 mutual
     translateObjectCreation :
