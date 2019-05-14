@@ -442,33 +442,39 @@ translateDef :
 translateDef ctx (MkMDef argCount body) =
     let
         (slots ** alloc) = allocExp body
-        hasSlots = proveHasSlots slots
-        translatedBody = translateWithAlloc
-            {slots = slots}
-            {ctx = MkCodeCtx (functions ctx) (localList slots)}
-            hasSlots
-            body
-            alloc
     in
         case diff slots argCount of
-            Left (extraSlots ** prf) =>
+            -- we have more parameters than the required amount of slots,
+            -- so we expand slot count to arg count
+            Left (extraSlots ** prf) => 
                 let
                     expanded = allocMore {x = extraSlots} {slots = slots} body alloc
-                    hasSlots2 = proveHasSlots argCount
-                    translatedBody2 = translateWithAlloc
+                    hasSlots = proveHasSlots argCount
+                    translatedBody = translateWithAlloc
                         {slots = argCount}
                         {ctx = MkCodeCtx (functions ctx) (localList argCount)}
-                        hasSlots2
+                        hasSlots
                         body
                         (rewrite sym prf in expanded)
                 in
                     MkFunction
                         []
-                        (rewrite appendNilRightNeutral (localList argCount) in translatedBody2)
+                        (rewrite appendNilRightNeutral (localList argCount) in translatedBody)
+            -- we need some extra slots for locals that are not args,
+            -- and the correct slot allocation is given by `alloc`
             Right (nonArgLocals ** prf) =>
-                MkFunction
-                    (localList nonArgLocals)
-                    (rewrite localListSize argCount nonArgLocals slots (mangleProofIntoShape prf) in translatedBody)
+                let
+                    hasSlots = proveHasSlots slots
+                    translatedBody = translateWithAlloc
+                        {slots = slots}
+                        {ctx = MkCodeCtx (functions ctx) (localList slots)}
+                        hasSlots
+                        body
+                        alloc
+                in
+                    MkFunction
+                        (localList nonArgLocals)
+                        (rewrite localListSize argCount nonArgLocals slots (mangleProofIntoShape prf) in translatedBody)
 
 translateDefsGo :
     (ctx : FunctionCtx) ->
