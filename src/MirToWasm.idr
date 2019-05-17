@@ -259,6 +259,25 @@ hasLocal {slots = Z} {ctx = (MkCodeCtx _ _)} HasSlotsZ (FS _) impossible
 hasLocal {slots = (S s)} {ctx = (MkCodeCtx functions (I32 :: xs))} (HasSlotsS x) FZ = HasLocalHere
 hasLocal {slots = (S s)} {ctx = (MkCodeCtx functions (I32 :: xs))} (HasSlotsS x) (FS y) = HasLocalThere (hasLocal x y)
 
+callType : List (MExp Obj locals) -> FuncType
+callType [] = MkFuncType [] (Some I32)
+callType (a :: as) =
+    let
+        (MkFuncType args ret) = callType as
+    in
+        MkFuncType (I32 :: args) ret
+
+public export
+Trans : Type -> Type
+Trans a = Either String a
+
+findFunction : (ctx : CodeCtx) -> (idx : Nat) -> Trans (ty : FuncType ** HasFunc ctx idx ty)
+findFunction (MkCodeCtx [] locals) _ = Left "call index is out of bounds"
+findFunction (MkCodeCtx (f :: fs) locals) Z = Right (f ** HasFuncHere)
+findFunction (MkCodeCtx (f :: fs) locals) (S x) = do
+    (ty ** prf) <- findFunction (MkCodeCtx fs locals) x
+    Right (ty ** HasFuncThere prf)
+
 mutual
     translateObjectCreation :
         {slots : Nat} ->
@@ -268,172 +287,140 @@ mutual
         (alloc : AllocList fields slots) ->
         (setField : Instr ctx (Some I32) -> Instr ctx None) ->
         (finish : Instr ctx ty) ->
-        Instr ctx ty
+        Trans (Instr ctx ty)
     translateWithAlloc :
         {slots : Nat} ->
         {ctx : CodeCtx} ->
         (hasSlots : HasSlots slots ctx) ->
         (exp : MExp ty locals) ->
         (alloc : AllocExp exp slots) ->
-        Instr ctx (Some I32)
+        Trans (Instr ctx (Some I32))
+    translateCall :
+        {ctx : CodeCtx} ->
+        (fn : Nat) ->
+        (args : List (MExp Obj locals)) ->
+        (alloc : AllocList args slots) ->
+        (hasSlots : HasSlots slots ctx) ->
+        Trans (Instr ctx (Some I32))
 
-    translateObjectCreation hasSlots [] AllocNil setField finish = finish
-    translateObjectCreation hasSlots (x :: xs) (AllocCons ax axs) setField finish =
-        let
-            field = translateWithAlloc hasSlots x ax
-        in
-            Chain
-                (setField field)
-                (translateObjectCreation hasSlots xs axs setField finish)
+    translateObjectCreation hasSlots [] AllocNil setField finish = Right finish
+    translateObjectCreation hasSlots (x :: xs) (AllocCons ax axs) setField finish = do
+        field <- translateWithAlloc hasSlots x ax
+        rest <- translateObjectCreation hasSlots xs axs setField finish
+        Right (Chain (setField field) rest)
 
-    translateWithAlloc hasSlots (Const x) AllocConst = Const (ValueI32 x)
-    translateWithAlloc hasSlots (Local x) (AllocLocal a) = LocalGet (finToNat a) {prf = hasLocal hasSlots a}
-    translateWithAlloc hasSlots (Let x y) (AllocLet a b c) =
-        let
-            init = translateWithAlloc hasSlots x b
-            body = translateWithAlloc hasSlots y c
-        in
-            Chain
-                (LocalSet (finToNat a) {prf = hasLocal hasSlots a} init)
-                body
-    translateWithAlloc {ctx} hasSlots (Create x xs) (AllocCreate a b c) =
-        let
-            tag = translateWithAlloc hasSlots x b
-            size = length xs * 4 + 4
-            -- size in pages rounded up
-            -- proper way to do this is (divNatNZ (size + 65535) 65536 SIsNotZ),
-            -- but that takes forever to typecheck
-            sizeInPages = assert_total (div (size + 65535) 65536)
-            -- check how much memory we have left
-            getSize = Wasm.Binop {ctx = ctx} MulInt MemorySize (Const (ValueI32 65536))
-            getRemaining = Binop SubInt getSize GlobalGet
-            -- grow by sizeInPages if not enough
-            needToGrow = Relop (LtInt Unsigned) getRemaining (Const (ValueI32 (toIntegerNat size)))
-            grow = Wasm.If None needToGrow (Drop (MemoryGrow (Const (ValueI32 (toIntegerNat sizeInPages))))) Empty
-            -- allocate: set local and increase global by size
-            allocate = Chain
-                (LocalSet (finToNat a) {prf = hasLocal hasSlots a} GlobalGet)
-                (GlobalSet (Binop AddInt GlobalGet (Const (ValueI32 (toIntegerNat size)))))
-            advanceMarker = LocalSet (finToNat a) {prf = hasLocal hasSlots a}
-                (Binop AddInt
-                    (Const (ValueI32 4))
-                    (LocalGet (finToNat a) {prf = hasLocal hasSlots a}))
-            initTag = Chain
-                (Store tag (LocalGet (finToNat a) {prf = hasLocal hasSlots a}))
-                advanceMarker
-            setField = \val => Chain
-                (Store val (LocalGet (finToNat a) {prf = hasLocal hasSlots a}))
-                advanceMarker
-            prep = Chain grow (Chain allocate initTag)
-            finish = Binop SubInt
-                (LocalGet (finToNat a) {prf = hasLocal hasSlots a})
-                (Const (ValueI32 (toIntegerNat size)))
-        in
-            Chain
-                prep
-                (translateObjectCreation hasSlots xs c setField finish)
-    translateWithAlloc hasSlots (Field x y) (AllocField a b) =
-        let
-            obj = translateWithAlloc hasSlots x a
-            idx = translateWithAlloc hasSlots y b
-            offset = Wasm.Binop MulInt (Const (ValueI32 4)) idx
-            addr = Wasm.Binop AddInt obj offset
-        in
-            Load addr
-    translateWithAlloc hasSlots (Tag x) (AllocTag y) =
-        let
-            objAddr = translateWithAlloc hasSlots x y
-        in
-            Load objAddr
-    translateWithAlloc hasSlots (If x y z) (AllocIf a b c) =
-        let
-            cond = translateWithAlloc hasSlots x a
-            t = translateWithAlloc hasSlots y b
-            e = translateWithAlloc hasSlots z c
-        in
-            If (Some I32) cond t e
-    translateWithAlloc hasSlots (Call k xs) alloc = ?translate_call
-    translateWithAlloc hasSlots (CallVirt x y z) (AllocCallVirt a b c) =
-        let
-            fn = translateWithAlloc hasSlots x a
-            arg1 = translateWithAlloc hasSlots y b
-            arg2 = translateWithAlloc hasSlots z c
-        in
-            CallIndirect fn arg1 arg2
-    translateWithAlloc hasSlots (Binop Add y z) (AllocBinop a b) =
-        let
-            lhs = translateWithAlloc hasSlots y a
-            rhs = translateWithAlloc hasSlots z b
-        in
-            Binop AddInt lhs rhs
-    translateWithAlloc hasSlots (Binop Sub y z) (AllocBinop a b) =
-        let
-            lhs = translateWithAlloc hasSlots y a
-            rhs = translateWithAlloc hasSlots z b
-        in
-            Binop SubInt lhs rhs
-    translateWithAlloc hasSlots (Binop Mul y z) (AllocBinop a b) =
-        let
-            lhs = translateWithAlloc hasSlots y a
-            rhs = translateWithAlloc hasSlots z b
-        in
-            Binop MulInt lhs rhs
-    translateWithAlloc hasSlots (Binop Div y z) (AllocBinop a b) =
-        let
-            lhs = translateWithAlloc hasSlots y a
-            rhs = translateWithAlloc hasSlots z b
-        in
-            -- we actually don't know if this is supposed to be signed or unsigned
-            -- division, so just assume signed because we just keep assuming that
-            -- stuff won't overflow anyways
-            Binop (DivInt Signed) lhs rhs
-    translateWithAlloc hasSlots (Binop Rem y z) (AllocBinop a b) =
-        let
-            lhs = translateWithAlloc hasSlots y a
-            rhs = translateWithAlloc hasSlots z b
-        in
-            -- same as above
-            Binop (RemInt Signed) lhs rhs
-    translateWithAlloc hasSlots (Binop Eq y z) (AllocBinop a b) =
-        let
-            lhs = translateWithAlloc hasSlots y a
-            rhs = translateWithAlloc hasSlots z b
-        in
-            Relop EqInt lhs rhs
-    translateWithAlloc hasSlots (Binop Ne y z) (AllocBinop a b) =
-        let
-            lhs = translateWithAlloc hasSlots y a
-            rhs = translateWithAlloc hasSlots z b
-        in
-            Relop NeInt lhs rhs
-    translateWithAlloc hasSlots (Binop Lt y z) (AllocBinop a b) =
-        let
-            lhs = translateWithAlloc hasSlots y a
-            rhs = translateWithAlloc hasSlots z b
-        in
-            -- save as above
-            Relop (LtInt Signed) lhs rhs
-    translateWithAlloc hasSlots (Binop Le y z) (AllocBinop a b) =
-        let
-            lhs = translateWithAlloc hasSlots y a
-            rhs = translateWithAlloc hasSlots z b
-        in
-            -- save as above
-            Relop (LeInt Signed) lhs rhs
-    translateWithAlloc hasSlots (Binop Gt y z) (AllocBinop a b) =
-        let
-            lhs = translateWithAlloc hasSlots y a
-            rhs = translateWithAlloc hasSlots z b
-        in
-            -- save as above
-            Relop (GtInt Signed) lhs rhs
-    translateWithAlloc hasSlots (Binop Ge y z) (AllocBinop a b) =
-        let
-            lhs = translateWithAlloc hasSlots y a
-            rhs = translateWithAlloc hasSlots z b
-        in
-            -- save as above
-            Relop (GeInt Signed) lhs rhs
+    translateWithAlloc hasSlots (Const x) AllocConst = Right (Const (ValueI32 x))
+    translateWithAlloc hasSlots (Local x) (AllocLocal a) = Right (LocalGet (finToNat a) {prf = hasLocal hasSlots a})
+    translateWithAlloc hasSlots (Let x y) (AllocLet a b c) = do
+        init <- translateWithAlloc hasSlots x b
+        body <- translateWithAlloc hasSlots y c
+        Right (Chain
+            (LocalSet (finToNat a) {prf = hasLocal hasSlots a} init)
+            body)
+    translateWithAlloc {ctx} hasSlots (Create x xs) (AllocCreate a b c) = do
+        tag <- translateWithAlloc hasSlots x b
+        let size = length xs * 4 + 4
+        -- size in pages rounded up
+        -- proper way to do this is (divNatNZ (size + 65535) 65536 SIsNotZ),
+        -- but that takes forever to typecheck
+        let sizeInPages = assert_total (div (size + 65535) 65536)
+        -- check how much memory we have left
+        let getSize = Wasm.Binop {ctx = ctx} MulInt MemorySize (Const (ValueI32 65536))
+        let getRemaining = Binop SubInt getSize GlobalGet
+        -- grow by sizeInPages if not enough
+        let needToGrow = Relop (LtInt Unsigned) getRemaining (Const (ValueI32 (toIntegerNat size)))
+        let grow = Wasm.If None needToGrow (Drop (MemoryGrow (Const (ValueI32 (toIntegerNat sizeInPages))))) Empty
+        -- allocate: set local and increase global by size
+        let allocate = Chain
+            (LocalSet (finToNat a) {prf = hasLocal hasSlots a} GlobalGet)
+            (GlobalSet (Binop AddInt GlobalGet (Const (ValueI32 (toIntegerNat size)))))
+        let advanceMarker = LocalSet (finToNat a) {prf = hasLocal hasSlots a}
+            (Binop AddInt
+                (Const (ValueI32 4))
+                (LocalGet (finToNat a) {prf = hasLocal hasSlots a}))
+        let initTag = Chain
+            (Store tag (LocalGet (finToNat a) {prf = hasLocal hasSlots a}))
+            advanceMarker
+        let setField = \val => Chain
+            (Store val (LocalGet (finToNat a) {prf = hasLocal hasSlots a}))
+            advanceMarker
+        let prep = Chain grow (Chain allocate initTag)
+        let finish = Binop SubInt
+            (LocalGet (finToNat a) {prf = hasLocal hasSlots a})
+            (Const (ValueI32 (toIntegerNat size)))
+        creation <- translateObjectCreation hasSlots xs c setField finish
+        Right (Chain prep creation)
+    translateWithAlloc hasSlots (Field x y) (AllocField a b) = do
+        obj <- translateWithAlloc hasSlots x a
+        idx <- translateWithAlloc hasSlots y b
+        let offset = Wasm.Binop MulInt (Const (ValueI32 4)) idx
+        let addr = Wasm.Binop AddInt obj offset
+        Right (Load addr)
+    translateWithAlloc hasSlots (Tag x) (AllocTag y) = do
+        objAddr <- translateWithAlloc hasSlots x y
+        Right (Load objAddr)
+    translateWithAlloc hasSlots (If x y z) (AllocIf a b c) = do
+        cond <- translateWithAlloc hasSlots x a
+        t <- translateWithAlloc hasSlots y b
+        e <- translateWithAlloc hasSlots z c
+        Right (If (Some I32) cond t e)
+    translateWithAlloc hasSlots (Call fn args) (AllocCall x) = translateCall fn args x hasSlots
+    translateWithAlloc hasSlots (CallVirt x y z) (AllocCallVirt a b c) = do
+        fn <- translateWithAlloc hasSlots x a
+        arg1 <- translateWithAlloc hasSlots y b
+        arg2 <- translateWithAlloc hasSlots z c
+        Right (CallIndirect fn arg1 arg2)
+    translateWithAlloc hasSlots (Binop Add y z) (AllocBinop a b) = do
+        lhs <- translateWithAlloc hasSlots y a
+        rhs <- translateWithAlloc hasSlots z b
+        Right (Binop AddInt lhs rhs)
+    translateWithAlloc hasSlots (Binop Sub y z) (AllocBinop a b) = do
+        lhs <- translateWithAlloc hasSlots y a
+        rhs <- translateWithAlloc hasSlots z b
+        Right (Binop SubInt lhs rhs)
+    translateWithAlloc hasSlots (Binop Mul y z) (AllocBinop a b) = do
+        lhs <- translateWithAlloc hasSlots y a
+        rhs <- translateWithAlloc hasSlots z b
+        Right (Binop MulInt lhs rhs)
+    translateWithAlloc hasSlots (Binop Div y z) (AllocBinop a b) = do
+        lhs <- translateWithAlloc hasSlots y a
+        rhs <- translateWithAlloc hasSlots z b
+        -- we actually don't know if this is supposed to be signed or unsigned
+        -- division, so just assume signed because we just keep assuming that
+        -- stuff won't overflow anyways
+        Right (Binop (DivInt Signed) lhs rhs)
+    translateWithAlloc hasSlots (Binop Rem y z) (AllocBinop a b) = do
+        lhs <- translateWithAlloc hasSlots y a
+        rhs <- translateWithAlloc hasSlots z b
+        Right (Binop (RemInt Signed) lhs rhs)
+    translateWithAlloc hasSlots (Binop Eq y z) (AllocBinop a b) = do
+        lhs <- translateWithAlloc hasSlots y a
+        rhs <- translateWithAlloc hasSlots z b
+        Right (Relop EqInt lhs rhs)
+    translateWithAlloc hasSlots (Binop Ne y z) (AllocBinop a b) = do
+        lhs <- translateWithAlloc hasSlots y a
+        rhs <- translateWithAlloc hasSlots z b
+        Right (Relop NeInt lhs rhs)
+    translateWithAlloc hasSlots (Binop Lt y z) (AllocBinop a b) = do
+        lhs <- translateWithAlloc hasSlots y a
+        rhs <- translateWithAlloc hasSlots z b
+        Right (Relop (LtInt Signed) lhs rhs)
+    translateWithAlloc hasSlots (Binop Le y z) (AllocBinop a b) = do
+        lhs <- translateWithAlloc hasSlots y a
+        rhs <- translateWithAlloc hasSlots z b
+        Right (Relop (LeInt Signed) lhs rhs)
+    translateWithAlloc hasSlots (Binop Gt y z) (AllocBinop a b) = do
+        lhs <- translateWithAlloc hasSlots y a
+        rhs <- translateWithAlloc hasSlots z b
+        Right (Relop (GtInt Signed) lhs rhs)
+    translateWithAlloc hasSlots (Binop Ge y z) (AllocBinop a b) = do
+        lhs <- translateWithAlloc hasSlots y a
+        rhs <- translateWithAlloc hasSlots z b
+        Right (Relop (GeInt Signed) lhs rhs)
+
+    translateCall {ctx} fn args alloc hasSlots = do
+        (ty ** prf) <- findFunction ctx fn
+        Right ?whatever
 
 proveHasSlots : (slots : Nat) -> HasSlots slots (MkCodeCtx functions (localList slots))
 proveHasSlots Z = HasSlotsZ
@@ -445,7 +432,7 @@ mangleProofIntoShape {a} {b} prf = rewrite plusCommutative b a in sym prf
 translateDef :
     (ctx : FunctionCtx) ->
     (def : MDef) ->
-    Function ctx (MkFuncType (localList (args def)) (Some I32))
+    Trans (Function ctx (MkFuncType (localList (args def)) (Some I32)))
 translateDef ctx (MkMDef argCount body) =
     let
         (slots ** alloc) = allocExp body
@@ -453,44 +440,40 @@ translateDef ctx (MkMDef argCount body) =
         case diff slots argCount of
             -- we have more parameters than the required amount of slots,
             -- so we expand slot count to arg count
-            Left (extraSlots ** prf) => 
-                let
-                    expanded = allocMore {x = extraSlots} {slots = slots} body alloc
-                    hasSlots = proveHasSlots argCount
-                    translatedBody = translateWithAlloc
-                        {slots = argCount}
-                        {ctx = MkCodeCtx (functions ctx) (localList argCount)}
-                        hasSlots
-                        body
-                        (rewrite sym prf in expanded)
-                in
-                    MkFunction
-                        []
-                        (rewrite appendNilRightNeutral (localList argCount) in translatedBody)
+            Left (extraSlots ** prf) => do
+                let expanded = allocMore {x = extraSlots} {slots = slots} body alloc
+                let hasSlots = proveHasSlots argCount
+                translatedBody <- translateWithAlloc
+                    {slots = argCount}
+                    {ctx = MkCodeCtx (functions ctx) (localList argCount)}
+                    hasSlots
+                    body
+                    (rewrite sym prf in expanded)
+                Right (MkFunction
+                    []
+                    (rewrite appendNilRightNeutral (localList argCount) in translatedBody))
             -- we need some extra slots for locals that are not args,
             -- and the correct slot allocation is given by `alloc`
-            Right (nonArgLocals ** prf) =>
-                let
-                    hasSlots = proveHasSlots slots
-                    translatedBody = translateWithAlloc
-                        {slots = slots}
-                        {ctx = MkCodeCtx (functions ctx) (localList slots)}
-                        hasSlots
-                        body
-                        alloc
-                in
-                    MkFunction
-                        (localList nonArgLocals)
-                        (rewrite localListSize argCount nonArgLocals slots (mangleProofIntoShape prf) in translatedBody)
+            Right (nonArgLocals ** prf) => do
+                let hasSlots = proveHasSlots slots
+                translatedBody <- translateWithAlloc
+                    {slots = slots}
+                    {ctx = MkCodeCtx (functions ctx) (localList slots)}
+                    hasSlots
+                    body
+                    alloc
+                Right (MkFunction
+                    (localList nonArgLocals)
+                    (rewrite localListSize argCount nonArgLocals slots (mangleProofIntoShape prf) in translatedBody))
 
 translateDefsGo :
     (ctx : FunctionCtx) ->
     (defs : List MDef) ->
-    Functions ctx (translateDecls defs)
-translateDefsGo ctx [] = FunctionsNil
-translateDefsGo ctx (d :: ds) = FunctionsCons (translateDef ctx d) (translateDefsGo ctx ds)
+    Trans (Functions ctx (translateDecls defs))
+translateDefsGo ctx [] = Right FunctionsNil
+translateDefsGo ctx (d :: ds) = Right (FunctionsCons !(translateDef ctx d) !(translateDefsGo ctx ds))
 
-translateDefs : (defs : List MDef) -> Functions (MkFunctionCtx (translateDecls defs)) (translateDecls defs)
+translateDefs : (defs : List MDef) -> Trans (Functions (MkFunctionCtx (translateDecls defs)) (translateDecls defs))
 translateDefs defs = translateDefsGo (MkFunctionCtx (translateDecls defs)) defs
 
 translateMain : (defs : List MDef) -> Fin (length defs) -> Fin (length (translateDecls defs))
@@ -500,13 +483,13 @@ translateMain (d :: ds) FZ = FZ
 translateMain (d :: ds) (FS x) = FS (translateMain ds x)
 
 export
-translateModule : Mir.Module -> Wasm.Module
+translateModule : Mir.Module -> Trans Wasm.Module
 translateModule (MkModule defs main) =
     let
         wasmDecls = translateDecls defs
     in
-        MkModule
+        Right (MkModule
             wasmDecls
-            (translateDefs defs)
+            !(translateDefs defs)
             (makeTable (length wasmDecls))
-            (translateMain defs main)
+            (translateMain defs main))

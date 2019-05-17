@@ -10,19 +10,20 @@ import MirToWasm
 mirModule : Mir.Module
 mirModule =
     MkModule
-        -- [MkMDef 1 (Create (Binop Mul (Const 3) (Tag (Local 0))) [])]
-        [MkMDef 0 (Create (Const 123) [])]
-        -- [MkMDef 1 (Local FZ)]
+        [MkMDef 1
+            (Let
+                (Create (Const 1) [])
+                (Create (Tag (Local 1)) [Local 1, Local 0]))]
         FZ
 
-wasmModule : Wasm.Module
+wasmModule : Trans Wasm.Module
 wasmModule = MirToWasm.translateModule mirModule
 
-bytes : List Int
-bytes = WasmEmit.emitModule wasmModule
+-- bytes : List Int
+-- bytes = Right (WasmEmit.emitModule !wasmModule)
 
-wat : String
-wat = WasmEmitText.emitModule wasmModule
+-- wat : Trans String
+-- wat = Right (WasmEmitText.emitModule !wasmModule)
 
 showByte : Int -> String
 showByte x = nibble (x `div` 16) ++ nibble (x `mod` 16) ++ "  "
@@ -40,13 +41,17 @@ writeBytes (x :: xs) file = do
     writeBytes xs file
 
 main : IO ()
-main = do
-    Right f <- openFile "output.wasm.txt" WriteTruncate
-        | Left err => putStrLn "failed to open output.wasm.txt"
-    Right () <- writeBytes bytes f
-        | Left err => putStrLn "failed to write output.wasm.txt"
-    Right f2 <- openFile "output.wat" WriteTruncate
-        | Left err => putStrLn "failed to open output.wat"
-    Right () <- fPutStr f2 wat
-        | Left err => putStrLn "failed to write output.wat"
-    putStrLn "done"
+main = case wasmModule of
+    Left err => do
+        putStrLn "failed to translate mir to wasm"
+        putStrLn err
+    Right mod => do
+        Right f <- openFile "output.wasm.txt" WriteTruncate
+            | Left err => putStrLn "failed to open output.wasm.txt"
+        Right () <- writeBytes (WasmEmit.emitModule mod) f
+            | Left err => putStrLn "failed to write output.wasm.txt"
+        Right f2 <- openFile "output.wat" WriteTruncate
+            | Left err => putStrLn "failed to open output.wat"
+        Right () <- fPutStr f2 (WasmEmitText.emitModule mod)
+            | Left err => putStrLn "failed to write output.wat"
+        putStrLn "done"
