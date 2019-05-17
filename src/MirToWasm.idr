@@ -324,12 +324,13 @@ mutual
             setField = \val => Chain
                 (Store val (LocalGet (finToNat a) {prf = hasLocal hasSlots a}))
                 advanceMarker
+            prep = Chain grow (Chain allocate initTag)
             finish = Binop SubInt
                 (LocalGet (finToNat a) {prf = hasLocal hasSlots a})
                 (Const (ValueI32 (toIntegerNat size)))
         in
             Chain
-                (Chain grow allocate)
+                prep
                 (translateObjectCreation hasSlots xs c setField finish)
     translateWithAlloc hasSlots (Field x y) (AllocField a b) =
         let
