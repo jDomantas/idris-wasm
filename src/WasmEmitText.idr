@@ -74,14 +74,14 @@ mutual
         emit ctx (Relop (LeInt Unsigned) a b) = emitOp ctx "i32.le_u" a b
         emit ctx (Relop (GeInt Signed) a b) = emitOp ctx "i32.ge_s" a b
         emit ctx (Relop (GeInt Unsigned) a b) = emitOp ctx "i32.ge_u" a b
-        emit ctx (LocalGet idx) = mkIndent ctx ++ "local.get $p" ++ emit ctx idx
-        emit ctx (LocalSet idx val) = emit ctx val ++ "\n" ++ mkIndent ctx ++ "local.set $p" ++ emit ctx idx
-        emit ctx GlobalGet = mkIndent ctx ++ "global.get $alloc"
-        emit ctx (GlobalSet val) = emit ctx val ++ "\n" ++ mkIndent ctx ++ "global.set $alloc"
+        emit ctx (LocalGet idx) = mkIndent ctx ++ "get_local $p" ++ emit ctx idx
+        emit ctx (LocalSet idx val) = emit ctx val ++ "\n" ++ mkIndent ctx ++ "set_local $p" ++ emit ctx idx
+        emit ctx GlobalGet = mkIndent ctx ++ "get_global $g0"
+        emit ctx (GlobalSet val) = emit ctx val ++ "\n" ++ mkIndent ctx ++ "set_global $g0"
         emit ctx (Load addr) = emit ctx addr ++ "\n" ++ mkIndent ctx ++ "i32.load"
         emit ctx (Store val addr) = emitOp ctx "i32.store" val addr
-        emit ctx MemorySize = mkIndent ctx ++ "memory.size"
-        emit ctx (MemoryGrow pages) = emit ctx pages ++ "\n" ++ mkIndent ctx ++ "memory.grow"
+        emit ctx MemorySize = mkIndent ctx ++ "current_memory"
+        emit ctx (MemoryGrow pages) = emit ctx pages ++ "\n" ++ mkIndent ctx ++ "grow_memory"
         emit ctx Unreachable = mkIndent ctx ++ "unreachable"
         emit ctx (If None c t Empty) =
             emit ctx c ++ "\n" ++
@@ -118,7 +118,8 @@ mutual
 emitLocalDecls : EmitCtx -> FuncType -> List ValueType -> Nat -> String
 emitLocalDecls ctx (MkFuncType [] None) [] idx = ""
 emitLocalDecls ctx (MkFuncType [] None) (l :: ls) idx =
-    " (local $p" ++ emit ctx idx ++ " " ++ emit ctx l ++ ")" ++
+    "\n" ++
+    mkIndent ctx ++ "(local $p" ++ emit ctx idx ++ " " ++ emit ctx l ++ ")" ++
     emitLocalDecls ctx (MkFuncType [] None) ls (S idx)
 emitLocalDecls ctx (MkFuncType [] (Some ty)) ls idx =
     " (result " ++ emit ctx ty ++ ")" ++
@@ -133,8 +134,8 @@ Emit (Functions ctx types) where
             emitFn : EmitCtx -> (ty : FuncType) -> Function fnCtx ty -> Nat -> String
             emitFn ctx ty (MkFunction locals body) idx =
                 mkIndent ctx ++ "(func $f" ++ emit ctx idx ++
-                    " (type " ++ emit ctx ty ++ ")" ++
-                    emitLocalDecls ctx ty locals 0 ++ "\n" ++
+                    " (type $t" ++ emit ctx (S idx) ++ ")" ++
+                    emitLocalDecls (indented ctx) ty locals 0 ++ "\n" ++
                     emit (indented ctx) body ++ ")"
             go : EmitCtx -> (types : List FuncType) -> Functions fnCtx types -> Nat -> String
             go ctx [] FunctionsNil idx = ""
@@ -145,10 +146,35 @@ Emit (Functions ctx types) where
             go ctx [] (FunctionsCons _ _) idx impossible
             go ctx (_ :: _) FunctionsNil idx impossible
 
+emitTypes : EmitCtx -> List FuncType -> Nat -> String
+emitTypes ctx [] idx = ""
+emitTypes ctx (t :: ts) idx =
+    mkIndent ctx ++ "(type $t" ++ emit ctx idx ++ " " ++ emit ctx t ++ ")\n" ++
+    emitTypes ctx ts (S idx)
+
+emitTable : EmitCtx -> List (Fin x) -> String
+emitTable ctx items = mkIndent ctx ++ "(elem (i32.const 0)" ++ go items 0 ++ ")"
+    where
+        go : List (Fin x) -> Nat -> String
+        go [] idx = ""
+        go (x :: xs) idx = " $f" ++ emit ctx idx ++ go xs (S idx)
+
 Emit Module where
     emit ctx (MkModule decls functions table main) =
-        mkIndent ctx ++ "(module\n" ++
-        emit (indented ctx) functions ++ ")"
+        let
+            ctx' = indented ctx
+            types = emitTypes ctx' (MkFuncType [I32, I32] (Some I32) :: decls) 0
+            fns = emit ctx' functions
+        in
+            mkIndent ctx ++ "(module\n" ++
+            types ++
+            fns ++ "\n" ++
+            mkIndent ctx' ++ "(table $T0 " ++ emit ctx (length table) ++ " " ++ emit ctx (length table) ++ " anyfunc)\n" ++
+            mkIndent ctx' ++ "(memory $M0 0)\n" ++
+            mkIndent ctx' ++ "(global $g0 (mut i32) (i32.const 0))\n" ++
+            mkIndent ctx' ++ "(export \"main\" (func $f" ++ emit ctx (finToNat main) ++ "))\n" ++
+            emitTable ctx' table ++ ")"
+
 
 export
 emitModule : Module -> String

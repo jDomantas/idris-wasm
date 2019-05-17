@@ -51,7 +51,7 @@ Emit ValueType where
     emit I32 = [0x7F]
 
 Emit ResultType where
-    emit None = [0x00]
+    emit None = [0x40]
     emit (Some ty) = emit [ty]
 
 Emit FuncType where
@@ -91,6 +91,7 @@ mutual
         emit MemorySize = [0x3F, 0x00]
         emit (MemoryGrow pages) = emit pages ++ [0x40, 0x00]
         emit Unreachable = [0x00]
+        emit (If None c t Empty) = emit c ++ [0x04] ++ emit None ++ emit t ++ [0x0B]
         emit (If ty c t e) = emit c ++ [0x04] ++ emit ty ++ emit t ++ [0x05] ++ emit e ++ [0x0B]
         emit (Call idx params) = emit params ++ [0x10] ++ emit idx
         emit (CallIndirect fn a b) = emit a ++ emit b ++ emit fn ++ [0x11, 0x00, 0x00]
@@ -129,8 +130,10 @@ emitTableElems elems = [0x01, 0x00, 0x41, 0x00, 0x0B] ++ emit (map finToNat elem
 Emit (Function ctx ty) where
     emit (MkFunction locals body) = emit (length el + length eb) ++ el ++ eb
         where
+            -- locals are represented as list of (local_count, type)
+            -- we only have i32 typed locals, so emit as [[i32] * local_count]
             el : List Int
-            el = emit locals
+            el = [0x01] ++ emit (length locals) ++ emit I32
             eb : List Int
             eb = emit body ++ [0x0B]
 

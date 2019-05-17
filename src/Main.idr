@@ -11,17 +11,12 @@ mirModule : Mir.Module
 mirModule =
     MkModule
         -- [MkMDef 1 (Create (Binop Mul (Const 3) (Tag (Local 0))) [])]
-        -- [MkMDef 0 (Create (Const 123) [])]
-        [MkMDef 1 (Local FZ)]
+        [MkMDef 0 (Create (Const 123) [])]
+        -- [MkMDef 1 (Local FZ)]
         FZ
 
 wasmModule : Wasm.Module
 wasmModule = MirToWasm.translateModule mirModule
-    -- MkModule
-    --     [MkFuncType [I32] (Some I32)]
-    --     (FunctionsCons (MkFunction [] (Binop MulInt (LocalGet 0 {prf = HasLocalHere}) (Const (ValueI32 5)))) FunctionsNil)
-    --     []
-    --     FZ
 
 bytes : List Int
 bytes = WasmEmit.emitModule wasmModule
