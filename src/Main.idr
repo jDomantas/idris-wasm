@@ -12,6 +12,7 @@ wasmModule =
         [MkFuncType [I32] (Some I32)]
         (FunctionsCons (MkFunction [] (Binop MulInt (LocalGet 0 {prf = HasLocalHere}) (Const (ValueI32 5)))) FunctionsNil)
         []
+        FZ
 
 bytes : List Int
 bytes = emitModule wasmModule

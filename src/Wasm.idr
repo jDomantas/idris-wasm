@@ -112,3 +112,4 @@ record Module where
     decls : List FuncType
     functions : Functions (MkFunctionCtx decls) decls
     table : List (Fin (length decls))
+    main : Fin (length decls)

@@ -42,6 +42,9 @@ Emit a => Emit (List a) where
             go [] = []
             go (x :: xs) = emit x ++ go xs
 
+Emit String where
+    emit s = emit (length s) ++ (map (cast {to = Int}) (unpack s))
+
 Emit ValueType where
     emit I32 = [0x7F]
 
@@ -115,6 +118,9 @@ emitMemory = [0x01] ++ emitLimits 0 Nothing
 emitGlobal : ValueType -> List Int
 emitGlobal ty = [0x01] ++ emit ty ++ [0x01, 0x41, 0x00, 0x0B]
 
+emitMain : Fin defs -> List Int
+emitMain main = [0x01] ++ emit "main" ++ [0x00] ++ emit (finToNat main)
+
 emitTableElems : List (Fin x) -> List Int
 emitTableElems elems = [0x01, 0x00, 0x41, 0x00, 0x0B] ++ emit (map finToNat elems)
 
@@ -143,13 +149,14 @@ header =
     ]
 
 Emit Module where
-    emit (MkModule decls functions table) =
+    emit (MkModule decls functions table main) =
         header ++
         emitSection 1 (emit (types ++ decls)) ++
         emitSection 3 (emit properDecls) ++
         emitSection 4 (emitTable (length table)) ++
         emitSection 5 emitMemory ++
         emitSection 6 (emitGlobal I32) ++
+        emitSection 7 (emitMain main) ++
         emitSection 9 (emitTableElems table) ++
         emitSection 10 (emit functions)
             where

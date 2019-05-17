@@ -30,4 +30,4 @@ record MDef where
 record Module where
     constructor MkModule
     defs : List MDef
-    main : Elem d defs
+    main : Fin (length defs)

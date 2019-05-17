@@ -1,6 +1,7 @@
 module MirToWasm
 
 import Data.Fin
+import Data.List
 import Mir
 import Wasm
 
@@ -489,14 +490,20 @@ translateDefsGo ctx (d :: ds) = FunctionsCons (translateDef ctx d) (translateDef
 translateDefs : (defs : List MDef) -> Functions (MkFunctionCtx (translateDecls defs)) (translateDecls defs)
 translateDefs defs = translateDefsGo (MkFunctionCtx (translateDecls defs)) defs
 
+translateMain : (defs : List MDef) -> Fin (length defs) -> Fin (length (translateDecls defs))
+translateMain [] FZ impossible
+translateMain [] (FS _) impossible
+translateMain (d :: ds) FZ = FZ
+translateMain (d :: ds) (FS x) = FS (translateMain ds x)
+
 export
 translateModule : Mir.Module -> Wasm.Module
-translateModule mod =
+translateModule (MkModule defs main) =
     let
-        mdefs = defs mod
-        wasmDecls = translateDecls mdefs
+        wasmDecls = translateDecls defs
     in
         MkModule
             wasmDecls
-            (translateDefs mdefs)
+            (translateDefs defs)
             (makeTable (length wasmDecls))
+            (translateMain defs main)
