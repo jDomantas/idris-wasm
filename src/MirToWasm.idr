@@ -418,9 +418,26 @@ mutual
         rhs <- translateWithAlloc hasSlots z b
         Right (Relop (GeInt Signed) lhs rhs)
 
-    translateCall {ctx} fn args alloc hasSlots = do
-        (ty ** prf) <- findFunction ctx fn
-        Right ?whatever
+    translateCallArgs :
+        {ctx : CodeCtx} ->
+        (args : List (MExp Obj locals)) ->
+        (types : List ValueType) ->
+        (alloc : AllocList args slots) ->
+        (hasSlots : HasSlots slots ctx) ->
+        Trans (CallParams ctx types)
+    translateCallArgs [] [] _ _ = Right ParamsNil
+    translateCallArgs (_ :: _) [] _ _ = Left "call with too many params"
+    translateCallArgs [] (_ :: _) _ _ = Left "call missing params"
+    translateCallArgs (p :: ps) (I32 :: ts) (AllocCons a as) hasSlots = do
+        arg <- translateWithAlloc hasSlots p a
+        rest <- translateCallArgs ps ts as hasSlots
+        Right (ParamsCons arg rest)
+
+    translateCall {ctx} fn argList alloc hasSlots = do
+        (MkFuncType args (Some I32) ** prf) <- findFunction ctx fn
+            | _ => Left "calling a function that does not return anything"
+        args' <- translateCallArgs argList args alloc hasSlots
+        Right (Call fn {prf = prf} args')
 
 proveHasSlots : (slots : Nat) -> HasSlots slots (MkCodeCtx functions (localList slots))
 proveHasSlots Z = HasSlotsZ

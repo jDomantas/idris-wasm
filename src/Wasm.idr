@@ -79,7 +79,7 @@ mutual
         MemoryGrow : Instr ctx (Some I32) -> Instr ctx (Some I32)
         Unreachable : Instr ctx ty
         If : (ty : ResultType) -> Instr ctx (Some I32) -> Instr ctx ty -> Instr ctx ty -> Instr ctx ty
-        Call : (idx : FuncIdx) -> {v : HasFunc ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (result f)
+        Call : (idx : FuncIdx) -> {prf : HasFunc ctx idx f} -> (CallParams ctx (args f)) -> Instr ctx (result f)
         -- all virtual calls must have type [i32, i32] -> [i32]
         CallIndirect : (fn : Instr ctx (Some I32)) -> Instr ctx (Some I32) -> Instr ctx (Some I32) -> Instr ctx (Some I32)
         Chain : Instr ctx None -> Instr ctx ty -> Instr ctx ty

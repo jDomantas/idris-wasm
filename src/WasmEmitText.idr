@@ -3,7 +3,7 @@ module WasmEmitText
 import Data.Fin
 import Wasm
 
-%default total
+%default covering
 
 -- Defines mapping from Wasm.Module to wasm text format
 
