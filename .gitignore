@@ -1,2 +1,6 @@
 *.exe
 **/*.ibc
+
+output.wasm
+output.wasm.txt
+output.wat
