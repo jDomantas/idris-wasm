@@ -16,7 +16,7 @@ Emit Int where
     emit b = [b]
 
 Emit Nat where
-    emit x =
+    emit x = 
         if x < 128 then
             [toIntNat x]
         else

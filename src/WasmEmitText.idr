@@ -3,10 +3,9 @@ module WasmEmitText
 import Data.Fin
 import Wasm
 
-%default covering
+%default total
 
 -- Defines mapping from Wasm.Module to wasm text format
--- FIXME: not really, currently its just a debugging output that looks somewhat similar to wat
 
 record EmitCtx where
     constructor MkEmitCtx
