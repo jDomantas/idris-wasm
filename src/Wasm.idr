@@ -28,8 +28,6 @@ data IntBinaryOp
     | DivInt Sign
     | RemInt Sign
 
-data IntTestOp = Eqz
-
 data IntRelOp = EqInt | NeInt | LtInt Sign | GtInt Sign | LeInt Sign | GeInt Sign
 
 record CodeCtx where
@@ -68,7 +66,6 @@ mutual
         Drop : Instr ctx (Some ty) -> Instr ctx None
         Const : Value ty -> Instr ctx (Some ty)
         Binop : IntBinaryOp -> Instr ctx (Some ty) -> Instr ctx (Some ty) -> Instr ctx (Some ty)
-        Testop : IntTestOp -> Instr ctx (Some ty) -> Instr ctx (Some I32)
         Relop : IntRelOp -> Instr ctx (Some ty) -> Instr ctx (Some ty) -> Instr ctx (Some I32)
         LocalGet : (idx : LocalIdx) -> {prf : HasLocal ctx idx ty} -> Instr ctx (Some ty)
         LocalSet : (idx : LocalIdx) -> {prf : HasLocal ctx idx ty} -> Instr ctx (Some ty) -> Instr ctx None

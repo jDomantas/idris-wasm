@@ -3,19 +3,31 @@ module Main
 import Data.Fin
 import Wasm
 import WasmEmit
+import WasmEmitText
 import Mir
 import MirToWasm
 
-wasmModule : Wasm.Module
-wasmModule =
+mirModule : Mir.Module
+mirModule =
     MkModule
-        [MkFuncType [I32] (Some I32)]
-        (FunctionsCons (MkFunction [] (Binop MulInt (LocalGet 0 {prf = HasLocalHere}) (Const (ValueI32 5)))) FunctionsNil)
-        []
+        -- [MkMDef 1 (Create (Binop Mul (Const 3) (Tag (Local 0))) [])]
+        -- [MkMDef 0 (Create (Const 123) [])]
+        [MkMDef 1 (Local FZ)]
         FZ
 
+wasmModule : Wasm.Module
+wasmModule = MirToWasm.translateModule mirModule
+    -- MkModule
+    --     [MkFuncType [I32] (Some I32)]
+    --     (FunctionsCons (MkFunction [] (Binop MulInt (LocalGet 0 {prf = HasLocalHere}) (Const (ValueI32 5)))) FunctionsNil)
+    --     []
+    --     FZ
+
 bytes : List Int
-bytes = emitModule wasmModule
+bytes = WasmEmit.emitModule wasmModule
+
+wat : String
+wat = WasmEmitText.emitModule wasmModule
 
 showByte : Int -> String
 showByte x = nibble (x `div` 16) ++ nibble (x `mod` 16) ++ "  "
@@ -35,7 +47,11 @@ writeBytes (x :: xs) file = do
 main : IO ()
 main = do
     Right f <- openFile "output.wasm.txt" WriteTruncate
-        | Left err => putStrLn "failed to open"
+        | Left err => putStrLn "failed to open output.wasm.txt"
     Right () <- writeBytes bytes f
-        | Left err => putStrLn "failed to write"
+        | Left err => putStrLn "failed to write output.wasm.txt"
+    Right f2 <- openFile "output.wat" WriteTruncate
+        | Left err => putStrLn "failed to open output.wat"
+    Right () <- fPutStr f2 wat
+        | Left err => putStrLn "failed to write output.wat"
     putStrLn "done"

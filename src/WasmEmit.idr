@@ -3,6 +3,8 @@ module WasmEmit
 import Data.Fin
 import Wasm
 
+%default covering
+
 -- Defines mapping from Wasm.Module to wasm binary format
 
 -- Idris doesn't have bytes :(
@@ -18,7 +20,7 @@ Emit Nat where
         if x < 128 then
             [toIntNat x]
         else
-            (128 + toIntNat (mod x 128)) :: emit (div x 128)
+            assert_total ((128 + toIntNat (mod x 128)) :: emit (div x 128))
 
 Emit Integer where
     emit x =
@@ -32,9 +34,9 @@ Emit Integer where
                 sign : Integer
                 sign = if x < 0 then -1 else 1
                 low : Integer
-                low = sign * mod (abs x) 128
+                low = assert_total (sign * mod (abs x) 128)
                 high : Integer
-                high = sign * div (abs x) 128
+                high = assert_total (sign * div (abs x) 128)
 
 Emit a => Emit (List a) where
     emit l = emit (length l) ++ go l
@@ -61,6 +63,7 @@ mutual
         emit (ParamsCons p ps) = emit p ++ emit ps
 
     Emit (Instr ctx ty) where
+        emit (Drop val) = emit val ++ [0x1A]
         emit (Const (ValueI32 val)) = 0x41 :: emit val
         emit (Binop AddInt a b) = emit a ++ emit b ++ [0x6A]
         emit (Binop SubInt a b) = emit a ++ emit b ++ [0x6B]
@@ -69,7 +72,6 @@ mutual
         emit (Binop (DivInt Unsigned) a b) = emit a ++ emit b ++ [0x6E]
         emit (Binop (RemInt Signed) a b) = emit a ++ emit b ++ [0x6F]
         emit (Binop (RemInt Unsigned) a b) = emit a ++ emit b ++ [0x70]
-        emit (Testop Eqz a) = emit a ++ [0x45]
         emit (Relop EqInt a b) = emit a ++ emit b ++ [0x46]
         emit (Relop NeInt a b) = emit a ++ emit b ++ [0x47]
         emit (Relop (LtInt Signed) a b) = emit a ++ emit b ++ [0x48]

@@ -328,7 +328,9 @@ mutual
                 (LocalGet (finToNat a) {prf = hasLocal hasSlots a})
                 (Const (ValueI32 (toIntegerNat size)))
         in
-            translateObjectCreation hasSlots xs c setField finish
+            Chain
+                (Chain grow allocate)
+                (translateObjectCreation hasSlots xs c setField finish)
     translateWithAlloc hasSlots (Field x y) (AllocField a b) =
         let
             obj = translateWithAlloc hasSlots x a
