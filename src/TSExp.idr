@@ -20,12 +20,12 @@ data PrimFn : Nat -> Type where
     Div : PrimFn 2
     Mod : PrimFn 2
     Neg : PrimFn 1
-    LT  : PrimFn 2
+    LT : PrimFn 2
     LTE : PrimFn 2
-    EQ  : PrimFn 2
+    EQ : PrimFn 2
     GTE : PrimFn 2
-    GT  : PrimFn 2
-    
+    GT : PrimFn 2
+
 mutual
     data TSExp : (vars : Nat) -> Type where
         Local : Fin vars -> TSExp vars
@@ -51,11 +51,11 @@ mutual
 
     record ConstBranch (vars : Nat) where
         constructor MkConstBranch
-        tag : TSConst
+        tag : Int
         value : TSExp vars
 
 data TSDef : Type where
-    Fun : (args : Nat) -> TSExp args -> TSDef
+    Function : (args : Nat) -> TSExp args -> TSDef
     Constructor : (tag : Int) -> (arity : Nat) -> TSDef
     Error : TSExp 0 -> TSDef
 
