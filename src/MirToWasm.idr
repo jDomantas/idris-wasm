@@ -45,6 +45,7 @@ mutual
         AllocCall : AllocList args slots -> AllocExp (Call f args) slots
         AllocCallVirt : AllocExp f slots -> AllocExp a slots -> AllocExp b slots -> AllocExp (CallVirt f a b) slots
         AllocBinop : AllocExp a slots -> AllocExp b slots -> AllocExp (Binop op a b) slots
+        AllocCrash : AllocExp Crash slots
 
     data AllocList : List (MExp ty locals) -> (slots : Nat) -> Type where
         AllocNil : AllocList [] slots
@@ -84,6 +85,7 @@ mutual
     allocMore (Call f args) (AllocCall x) = AllocCall (allocMoreList args x)
     allocMore (CallVirt f a b) (AllocCallVirt x y z) = AllocCallVirt (allocMore f x) (allocMore a y) (allocMore b z)
     allocMore (Binop op a b) (AllocBinop x y) = AllocBinop (allocMore a x) (allocMore b y)
+    allocMore Crash AllocCrash = AllocCrash
 
 -- Returns which value is bigger and the difference between them.
 -- In retrospect, it would have been better to just return ((a, b) ** a + x = b + y),
@@ -141,6 +143,7 @@ mutual
     insertSlot idx (AllocCall x) = AllocCall (insertSlotList idx x)
     insertSlot idx (AllocCallVirt x y z) = AllocCallVirt (insertSlot idx x) (insertSlot idx y) (insertSlot idx z)
     insertSlot idx (AllocBinop x y) = AllocBinop (insertSlot idx x) (insertSlot idx y)
+    insertSlot idx AllocCrash = AllocCrash
 
 mutual
     allocExp : {locals : Nat} -> (exp : MExp ty locals) -> (slots : Nat ** AllocExp exp slots)
@@ -232,6 +235,7 @@ mutual
             case diff sa sb of
                 Left (d ** prf) => (sb ** AllocBinop (rewrite sym prf in allocMore {x = d} a aa) ab)
                 Right (d ** prf) => (sa ** AllocBinop aa (rewrite prf in allocMore {x = d} b ab))
+    allocExp Crash = (0 ** AllocCrash)
 
     allocList [] = (0 ** AllocNil)
     allocList (e :: es) =
@@ -414,6 +418,7 @@ mutual
         lhs <- translateWithAlloc hasSlots y a
         rhs <- translateWithAlloc hasSlots z b
         pure (Relop (GeInt Signed) lhs rhs)
+    translateWithAlloc hasSlots Crash AllocCrash = pure Unreachable
 
     translateCallArgs :
         {ctx : CodeCtx} ->

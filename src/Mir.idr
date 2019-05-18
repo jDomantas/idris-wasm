@@ -21,6 +21,7 @@ data MExp : ValueType -> Nat -> Type where
     Call : Nat -> List (MExp Obj locals) -> MExp Obj locals
     CallVirt : MExp Num locals -> MExp Obj locals -> MExp Obj locals -> MExp Obj locals
     Binop : Op -> MExp Num locals -> MExp Num locals -> MExp Num locals
+    Crash : MExp ty locals
 
 record MDef where
     constructor MkMDef
