@@ -1,6 +1,7 @@
 module Main
 
 import Data.Fin
+import Trans
 import Wasm
 import WasmEmit
 import WasmEmitText
@@ -21,12 +22,6 @@ mirModule =
 wasmModule : Trans Wasm.Module
 wasmModule = MirToWasm.translateModule mirModule
 
--- bytes : List Int
--- bytes = Right (WasmEmit.emitModule !wasmModule)
-
--- wat : Trans String
--- wat = Right (WasmEmitText.emitModule !wasmModule)
-
 showByte : Int -> String
 showByte x = nibble (x `div` 16) ++ nibble (x `mod` 16) ++ "  "
     where
@@ -43,7 +38,7 @@ writeBytes (x :: xs) file = do
     writeBytes xs file
 
 main : IO ()
-main = case wasmModule of
+main = case run wasmModule "" of
     Left err => do
         putStrLn "failed to translate mir to wasm"
         putStrLn err

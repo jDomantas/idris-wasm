@@ -1,7 +1,8 @@
 package Wasm
 
 modules
-    = Wasm
+    = Trans
+    , Wasm
     , WasmEmit
     , WasmEmitText
     , Mir
