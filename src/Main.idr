@@ -6,6 +6,8 @@ import WasmEmit
 import WasmEmitText
 import Mir
 import MirToWasm
+import TSExp
+import TSExpToMir
 
 mirModule : Mir.Module
 mirModule =

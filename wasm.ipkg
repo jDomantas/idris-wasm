@@ -6,6 +6,8 @@ modules
     , WasmEmitText
     , Mir
     , MirToWasm
+    , TSExp
+    , TSExpToMir
     , Main
 
 sourcedir = src
