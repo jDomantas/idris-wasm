@@ -32,18 +32,14 @@ emitDef def = MkEmit (\defs => (defs ++ [def], length defs))
 emit : Emit a -> (List MDef, a)
 emit e = runEmit e []
 
-data AnyExp : (locals : Nat) -> Type where
-    ObjExp : MExp Obj locals -> AnyExp locals
-    NumExp : MExp Num locals -> AnyExp locals
-    EitherExp : ((ty : ValueType) -> MExp ty locals) -> AnyExp locals
-
 -- number boxing and unboxing
-coerce : {ty : ValueType} -> AnyExp locals -> MExp ty locals
-coerce {ty = Obj} (ObjExp exp) = exp
-coerce {ty = Num} (NumExp exp) = exp
-coerce {ty = Obj} (NumExp exp) = Create exp []
-coerce {ty = Num} (ObjExp exp) = Tag exp
-coerce {ty} (EitherExp make) = make ty
+coerce : {from : ValueType} -> {to : ValueType} -> MExp from locals -> MExp to locals
+
+-- coerce {ty = Obj} (ObjExp exp) = exp
+-- coerce {ty = Num} (NumExp exp) = exp
+-- coerce {ty = Obj} (NumExp exp) = Create exp []
+-- coerce {ty = Num} (ObjExp exp) = Tag exp
+-- coerce {ty} (EitherExp make) = make ty
 
 dummyObject : MExp Obj locals
 dummyObject = Create (Const 0) []
@@ -85,6 +81,9 @@ mutual
     insertLocal pos (Binop x y z) = Binop x (insertLocal pos y) (insertLocal pos z)
     insertLocal pos Crash = Crash
 
+insertHere : MExp ty locals -> MExp ty (S locals)
+insertHere {locals} expr = insertLocal locals {prf = lteRefl} expr
+
 weaken : MExp ty locals -> MExp ty (S locals)
 weaken exp = insertLocal 0 exp
 
@@ -99,55 +98,75 @@ rebindUpvalues count expr =
     in
         goRebind count inner
 
+applyArgs : (fn : MExp Obj locals) -> (args : List (MExp Obj locals)) -> MExp Obj locals
+applyArgs fn [] = fn
+applyArgs fn (x :: xs) = applyArgs (CallVirt (Tag fn) fn x) xs
+
 mutual
-    translateList : {locals : Nat} -> List (TSExp locals) -> Emit (List (AnyExp locals))
-    translateExpr : TSExp locals -> Emit (AnyExp locals)
+    translateList : {locals : Nat} -> List (TSExp locals) -> Emit (List (MExp ty locals))
+    translateExpr : TSExp locals -> Emit (MExp ty locals)
+    translateConstCase : List (ConstBranch locals) -> Maybe (TSExp locals) -> Emit (MExp ty (S locals))
 
     translateList [] = pure []
     translateList (x :: xs) = pure (!(translateExpr x) :: !(translateList xs))
 
-    translateExpr (Local idx) = pure (ObjExp (Local idx))
+    translateConstCase [] Nothing = pure Crash
+    translateConstCase [] (Just defaultCase) = do
+        value <- translateExpr defaultCase
+        pure (insertHere value)
+    translateConstCase {locals} (b :: bs) df = ?wahsadsda
+
+    translateExpr (Local idx) = pure (coerce (Local idx))
     translateExpr (Global k) = ?translateExpr_rhs_2
     translateExpr {locals} (Lam x) = do
         body <- translateExpr x
-        let def = MkMDef 2 (rebindUpvalues locals (coerce body))
+        let def = MkMDef 2 (rebindUpvalues locals body)
         defId <- emitDef def
-        pure (ObjExp (capture (cast defId)))
+        pure (coerce (capture (cast defId)))
     translateExpr (Let x y) = do
         val <- translateExpr x
         rest <- translateExpr y
-        pure (EitherExp (\ty => Let (coerce val) (coerce rest)))
-    translateExpr (Apply x xs) = ?translateExpr_rhs_5
+        pure (Let val rest)
+    -- global functions can be called in mir directly
+    translateExpr (Apply (Global f) xs) = do
+        args <- translateList xs
+        pure (coerce (Call f args))
+    -- if we are calling non-global, then it must be lambda function
+    translateExpr (Apply f xs) = do
+        fn <- translateExpr f
+        args <- translateList xs
+        pure (coerce (applyArgs fn args))
     translateExpr (Construct tag xs) = do
         fields <- translateList xs
         let tag = Const (cast tag)
-        let fields = map (coerce {ty = Obj}) fields
-        pure (ObjExp (Create tag fields))
+        pure (coerce (Create tag fields))
     translateExpr (Force x) = do
-        x' <- translateExpr x
-        let delayed = coerce {ty = Obj} x'
-        pure (ObjExp (CallVirt (Tag delayed) delayed dummyObject))
+        delayed <- translateExpr x
+        pure (coerce (CallVirt (Tag delayed) delayed dummyObject))
     translateExpr {locals} (Delay x) = do
         body <- translateExpr x
-        let withParam = insertLocal locals {prf = lteRefl} (coerce body)
+        let withParam = insertHere body
         let def = MkMDef 2 (rebindUpvalues locals withParam)
         defId <- emitDef def
-        pure (ObjExp (capture (cast defId)))
+        pure (coerce (capture (cast defId)))
     translateExpr (Case sc xs x) = ?translateExpr_rhs_9
-    translateExpr (ConstCase sc xs x) = ?translateExpr_rhs_10
-    translateExpr (Const (I x)) = pure (NumExp (Const x))
-    translateExpr (Const WorldVal) = pure (ObjExp dummyObject)
-    translateExpr (Const IntegerType) = pure (ObjExp dummyObject)
-    translateExpr (Const WorldType) = pure (ObjExp dummyObject)
-    translateExpr Erased = pure (EitherExp (\ty => case ty of
+    translateExpr (ConstCase sc xs x) = do
+        matched <- translateExpr sc
+        branches <- translateConstCase xs x
+        pure (Let matched branches)
+    translateExpr (Const (I x)) = pure (coerce (Const x))
+    translateExpr (Const WorldVal) = pure (coerce dummyObject)
+    translateExpr (Const IntegerType) = pure (coerce dummyObject)
+    translateExpr (Const WorldType) = pure (coerce dummyObject)
+    translateExpr {ty} Erased = pure (case ty of
         Obj => Create (Const 0) []
-        Num => Const 0))
-    translateExpr (Crash msg) = pure (EitherExp (\ty => Crash))
+        Num => Const 0)
+    translateExpr (Crash msg) = pure Crash
 
 translateFunction : (args : Nat) -> (body : TSExp args) -> Emit Nat
 translateFunction args body = do
     mbody <- translateExpr body
-    emitDef (MkMDef args (coerce mbody))
+    emitDef (MkMDef args mbody)
 
 translateConstructor : (tag : Int) -> (arity : Nat) -> MDef
 translateConstructor tag arity = MkMDef arity (capture (cast tag))
@@ -155,7 +174,6 @@ translateConstructor tag arity = MkMDef arity (capture (cast tag))
 translateDef : TSDef -> Emit Nat
 translateDef (Function args body) = translateFunction args body
 translateDef (Constructor tag arity) = emitDef (translateConstructor tag arity)
-translateDef (Error body) = emitDef (MkMDef 0 Crash)
 
 data MainState : Nat -> Type where
     Searching : Fin defs -> MainState defs

@@ -57,7 +57,6 @@ mutual
 data TSDef : Type where
     Function : (args : Nat) -> TSExp args -> TSDef
     Constructor : (tag : Int) -> (arity : Nat) -> TSDef
-    Error : TSExp 0 -> TSDef
 
 record Module where
     constructor MkModule
