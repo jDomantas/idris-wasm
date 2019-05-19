@@ -1,48 +1,58 @@
 module TSExpToMir
 
 import Data.Fin
+import Data.List
 import Trans
 import TSExp
 import Mir
 
-%default total
+%default covering
 
 record Emit a where
     constructor MkEmit
-    runEmit : List MDef -> (List MDef, a)
+    runEmit : List Nat -> List MDef -> Either String (List MDef, a)
 
 Functor Emit where
-    map f em = MkEmit (\defs => let (defs', res) = runEmit em defs in (defs', f res))
+    map f em = MkEmit (\arities, defs => case runEmit em arities defs of
+        Right (defs', res) => Right (defs', f res)
+        Left err => Left err)
 
 Applicative Emit where
-    pure a = MkEmit (\defs => (defs, a))
-    f <*> x = MkEmit (\defs =>
-        let (defs', f') = runEmit f defs in
-        let (defs'', x') = runEmit x defs' in
-            (defs'', f' x'))
+    pure a = MkEmit (\arities, defs => pure (defs, a))
+    f <*> x = MkEmit (\arities, defs => case runEmit f arities defs of
+        Left err => Left err
+        Right (defs', f') => case runEmit x arities defs' of
+            Left err => Left err
+            Right (defs'', x') => Right (defs'', f' x'))
 
 Monad Emit where
-    x >>= f = MkEmit (\defs =>
-        let (defs', x') = runEmit x defs in
-            runEmit (f x') defs')
+    x >>= f = MkEmit (\arities, defs => case runEmit x arities defs of
+        Left err => Left err
+        Right (defs', x') => runEmit (f x') arities defs')
 
 emitDef : MDef -> Emit Nat
-emitDef def = MkEmit (\defs => (defs ++ [def], length defs))
+emitDef def = MkEmit (\arities, defs => Right (defs ++ [def], length defs))
 
-emit : Emit a -> (List MDef, a)
-emit e = runEmit e []
+getArity : (global : Nat) -> Emit Nat
+getArity global = MkEmit (\arities, defs => case index' global arities of
+    Just arity => Right (defs, arity)
+    Nothing => Left "tsexp global ref out of bounds")
+
+emit : List Nat -> Emit a -> Trans (List MDef, a)
+emit arities e = case runEmit e arities [] of
+    Left err => abort err
+    Right ok => pure ok
 
 -- number boxing and unboxing
 coerce : {from : ValueType} -> {to : ValueType} -> MExp from locals -> MExp to locals
 
--- coerce {ty = Obj} (ObjExp exp) = exp
--- coerce {ty = Num} (NumExp exp) = exp
--- coerce {ty = Obj} (NumExp exp) = Create exp []
--- coerce {ty = Num} (ObjExp exp) = Tag exp
--- coerce {ty} (EitherExp make) = make ty
+coerce {from = Obj} {to = Obj} exp = exp
+coerce {from = Num} {to = Num} exp = exp
+coerce {from = Num} {to = Obj} exp = Create exp []
+coerce {from = Obj} {to = Num} exp = Tag exp
 
-dummyObject : MExp Obj locals
-dummyObject = Create (Const 0) []
+dummy : {ty : ValueType} -> MExp ty locals
+dummy = coerce (Const 0)
 
 makeLocalIndex : (locals : Nat) -> (idx : Nat) -> (prf : LTE (S idx) locals) -> Fin locals
 makeLocalIndex (S right) Z (LTESucc LTEZero) = FZ
@@ -102,6 +112,22 @@ applyArgs : (fn : MExp Obj locals) -> (args : List (MExp Obj locals)) -> MExp Ob
 applyArgs fn [] = fn
 applyArgs fn (x :: xs) = applyArgs (CallVirt (Tag fn) fn x) xs
 
+wrappingArithmetic : (x : Nat) -> {amount : Nat} -> (prf : LTE (S x) amount) -> (S (minus amount (S x)) = minus amount x)
+wrappingArithmetic _ {amount = Z} LTEZero impossible
+wrappingArithmetic _ {amount = Z} (LTESucc _) impossible
+wrappingArithmetic Z {amount = (S k)} prf = rewrite minusZeroRight k in Refl
+wrappingArithmetic (S k) {amount = S j} prf = wrappingArithmetic k (fromLteSucc prf)
+
+wrapLambdas : {locals : Nat} -> (idx : Nat) -> (amount : Nat) -> TSExp locals
+wrapLambdas {locals} idx amount = replace (sym (minusZeroN amount)) {P = \x => TSExp (plus x locals)} (go amount {prf = lteRefl})
+    where
+        makeParamList : (to : Nat) -> {prf : LTE to amount} -> List (TSExp (amount + locals))
+        makeParamList Z {prf} = []
+        makeParamList (S x) {prf} = Local (weakenN locals (makeLocalIndex amount x prf)) :: makeParamList x {prf = lteSuccLeft prf}
+        go : (layers : Nat) -> {prf : LTE layers amount} -> TSExp (amount - layers + locals)
+        go Z = rewrite minusZeroRight amount in Apply (Global idx) (makeParamList amount {prf = lteRefl})
+        go (S x) {prf} = Lam (replace (sym (wrappingArithmetic x prf)) {P = \t => TSExp (plus t locals)} (go x {prf = lteSuccLeft prf}))
+
 mutual
     translateList : {locals : Nat} -> List (TSExp locals) -> Emit (List (MExp ty locals))
     translateExpr : TSExp locals -> Emit (MExp ty locals)
@@ -114,10 +140,21 @@ mutual
     translateConstCase [] (Just defaultCase) = do
         value <- translateExpr defaultCase
         pure (insertHere value)
-    translateConstCase {locals} (b :: bs) df = ?wahsadsda
+    translateConstCase {locals} (MkConstBranch tag value :: bs) df = do
+        body <- translateExpr value
+        rest <- translateConstCase bs df
+        let code = If (Binop Eq (Const (cast tag)) (coerce (Local FZ)))
+            (insertHere body)
+            rest
+        pure code
 
     translateExpr (Local idx) = pure (coerce (Local idx))
-    translateExpr (Global k) = ?translateExpr_rhs_2
+    translateExpr (Global k) = do
+        arity <- getArity k
+        -- we give up totality here for convenience: its easier to add lambdas
+        -- in tsexp form, but then the compiler sees this as possibly increasing
+        -- the size of `expr` parameter
+        translateExpr (wrapLambdas k arity)
     translateExpr {locals} (Lam x) = do
         body <- translateExpr x
         let def = MkMDef 2 (rebindUpvalues locals body)
@@ -131,7 +168,7 @@ mutual
     translateExpr (Apply (Global f) xs) = do
         args <- translateList xs
         pure (coerce (Call f args))
-    -- if we are calling non-global, then it must be lambda function
+    -- if we are calling non-global, then it must be lambda function - use callvirt
     translateExpr (Apply f xs) = do
         fn <- translateExpr f
         args <- translateList xs
@@ -142,25 +179,23 @@ mutual
         pure (coerce (Create tag fields))
     translateExpr (Force x) = do
         delayed <- translateExpr x
-        pure (coerce (CallVirt (Tag delayed) delayed dummyObject))
+        pure (coerce (CallVirt (Tag delayed) delayed dummy))
     translateExpr {locals} (Delay x) = do
         body <- translateExpr x
         let withParam = insertHere body
         let def = MkMDef 2 (rebindUpvalues locals withParam)
         defId <- emitDef def
         pure (coerce (capture (cast defId)))
-    translateExpr (Case sc xs x) = ?translateExpr_rhs_9
+    translateExpr (Case sc xs x) = ?translateExpr_case
     translateExpr (ConstCase sc xs x) = do
         matched <- translateExpr sc
         branches <- translateConstCase xs x
         pure (Let matched branches)
     translateExpr (Const (I x)) = pure (coerce (Const x))
-    translateExpr (Const WorldVal) = pure (coerce dummyObject)
-    translateExpr (Const IntegerType) = pure (coerce dummyObject)
-    translateExpr (Const WorldType) = pure (coerce dummyObject)
-    translateExpr {ty} Erased = pure (case ty of
-        Obj => Create (Const 0) []
-        Num => Const 0)
+    translateExpr (Const WorldVal) = pure dummy
+    translateExpr (Const IntegerType) = pure dummy
+    translateExpr (Const WorldType) = pure dummy
+    translateExpr {ty} Erased = pure dummy
     translateExpr (Crash msg) = pure Crash
 
 translateFunction : (args : Nat) -> (body : TSExp args) -> Emit Nat
@@ -193,10 +228,14 @@ translateDefs (d :: ds) (Found idx) = do
     translateDef d
     translateDefs ds (Found idx)
 
+arity : TSDef -> Nat
+arity (Function args _) = args
+arity (Constructor _ arity) = arity
+
 export
 translateModule : TSExp.Module -> Trans Mir.Module
-translateModule (MkModule defs main) =
-    let (mdefs, mainIdx) = emit (translateDefs defs (Searching main)) in
-        case natToFin mainIdx (length mdefs) of
-            Just idx => pure (MkModule mdefs idx)
-            Nothing => abort "bug: main oob"
+translateModule (MkModule defs main) = do
+    (mdefs, mainIdx) <- emit (map arity defs) (translateDefs defs (Searching main))
+    case natToFin mainIdx (length mdefs) of
+        Just idx => pure (MkModule mdefs idx)
+        Nothing => abort "bug: main oob"
