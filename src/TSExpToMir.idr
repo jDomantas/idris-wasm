@@ -2,6 +2,7 @@ module TSExpToMir
 
 import Data.Fin
 import Data.List
+import Data.Vect
 import Trans
 import TSExp
 import Mir
@@ -132,6 +133,7 @@ mutual
     translateList : {locals : Nat} -> List (TSExp locals) -> Emit (List (MExp ty locals))
     translateExpr : TSExp locals -> Emit (MExp ty locals)
     translateConstCase : List (ConstBranch locals) -> Maybe (TSExp locals) -> Emit (MExp ty (S locals))
+    translateCase : List (Branch locals) -> Maybe (TSExp locals) -> Emit (MExp ty (S locals))
 
     translateList [] = pure []
     translateList (x :: xs) = pure (!(translateExpr x) :: !(translateList xs))
@@ -177,6 +179,49 @@ mutual
         fields <- translateList xs
         let tag = Const (cast tag)
         pure (coerce (Create tag fields))
+    translateExpr (Op Add [a, b]) = do
+        a <- translateExpr a
+        b <- translateExpr b
+        pure (coerce (Binop Add a b))
+    translateExpr (Op Sub [a, b]) = do
+        a <- translateExpr a
+        b <- translateExpr b
+        pure (coerce (Binop Sub a b))
+    translateExpr (Op Mul [a, b]) = do
+        a <- translateExpr a
+        b <- translateExpr b
+        pure (coerce (Binop Mul a b))
+    translateExpr (Op Div [a, b]) = do
+        a <- translateExpr a
+        b <- translateExpr b
+        pure (coerce (Binop Div a b))
+    translateExpr (Op Mod [a, b]) = do
+        a <- translateExpr a
+        b <- translateExpr b
+        pure (coerce (Binop Rem a b))
+    translateExpr (Op Neg [a]) = do
+        a <- translateExpr a
+        pure (coerce (Binop Sub (Const 0) a))
+    translateExpr (Op LT [a, b]) = do
+        a <- translateExpr a
+        b <- translateExpr b
+        pure (coerce (Binop Lt a b))
+    translateExpr (Op LTE [a, b]) = do
+        a <- translateExpr a
+        b <- translateExpr b
+        pure (coerce (Binop Le a b))
+    translateExpr (Op EQ [a, b]) = do
+        a <- translateExpr a
+        b <- translateExpr b
+        pure (coerce (Binop Eq a b))
+    translateExpr (Op GT [a, b]) = do
+        a <- translateExpr a
+        b <- translateExpr b
+        pure (coerce (Binop Gt a b))
+    translateExpr (Op GTE [a, b]) = do
+        a <- translateExpr a
+        b <- translateExpr b
+        pure (coerce (Binop Ge a b))
     translateExpr (Force x) = do
         delayed <- translateExpr x
         pure (coerce (CallVirt (Tag delayed) delayed dummy))
@@ -186,7 +231,10 @@ mutual
         let def = MkMDef 2 (rebindUpvalues locals withParam)
         defId <- emitDef def
         pure (coerce (capture (cast defId)))
-    translateExpr (Case sc xs x) = ?translateExpr_case
+    translateExpr (Case sc xs x) = do
+        matched <- translateExpr sc
+        branches <- translateCase xs x
+        pure (Let matched branches)
     translateExpr (ConstCase sc xs x) = do
         matched <- translateExpr sc
         branches <- translateConstCase xs x
