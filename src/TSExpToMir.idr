@@ -129,6 +129,10 @@ wrapLambdas {locals} idx amount = replace (sym (minusZeroN amount)) {P = \x => T
         go Z = rewrite minusZeroRight amount in Apply (Global idx) (makeParamList amount {prf = lteRefl})
         go (S x) {prf} = Lam (replace (sym (wrappingArithmetic x prf)) {P = \t => TSExp (plus t locals)} (go x {prf = lteSuccLeft prf}))
 
+unpackObject : {locals : Nat} -> (idx : Nat) -> (expr : MExp ty (S idx + locals)) -> MExp ty (S locals)
+unpackObject Z expr = expr
+unpackObject {locals} (S x) expr = unpackObject x (Let (Field (Local (weakenN locals (last {n = x}))) (Const (cast x))) expr)
+
 mutual
     translateList : {locals : Nat} -> List (TSExp locals) -> Emit (List (MExp ty locals))
     translateExpr : TSExp locals -> Emit (MExp ty locals)
@@ -139,14 +143,23 @@ mutual
     translateList (x :: xs) = pure (!(translateExpr x) :: !(translateList xs))
 
     translateConstCase [] Nothing = pure Crash
-    translateConstCase [] (Just defaultCase) = do
-        value <- translateExpr defaultCase
-        pure (insertHere value)
+    translateConstCase [] (Just defaultCase) = pure (insertHere !(translateExpr defaultCase))
     translateConstCase {locals} (MkConstBranch tag value :: bs) df = do
         body <- translateExpr value
         rest <- translateConstCase bs df
         let code = If (Binop Eq (Const (cast tag)) (coerce (Local FZ)))
             (insertHere body)
+            rest
+        pure code
+
+    translateCase [] Nothing = pure Crash
+    translateCase [] (Just defaultCase) = pure (insertHere !(translateExpr defaultCase))
+    translateCase {locals} (MkBranch tag args value :: bs) df = do
+        body <- translateExpr value
+        rest <- translateCase bs df
+        let unpacked = unpackObject args (insertHere body)
+        let code = If (Binop Eq (Const (cast tag)) (Tag (Local FZ)))
+            unpacked
             rest
         pure code
 
