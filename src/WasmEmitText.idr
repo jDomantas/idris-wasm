@@ -96,7 +96,7 @@ mutual
             mkIndent ctx ++ "end"
         emit ctx (If (Some ty) c t e) =
             emit ctx c ++ "\n" ++
-            mkIndent ctx ++ "if " ++ emit ctx ty ++ "\n" ++
+            mkIndent ctx ++ "if (result " ++ emit ctx ty ++ ")\n" ++
             emit (indented ctx) t ++ "\n" ++
             mkIndent ctx ++ "else\n" ++
             emit (indented ctx) e ++ "\n" ++
