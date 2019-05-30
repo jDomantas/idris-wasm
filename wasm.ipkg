@@ -9,8 +9,6 @@ modules
     , MirToWasm
     , TSExp
     , TSExpToMir
-    , Main
+    , Codegen
 
 sourcedir = src
-executable = wasm
-main = Main

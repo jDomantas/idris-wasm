@@ -102,7 +102,7 @@ mutual
             emit (indented ctx) e ++ "\n" ++
             mkIndent ctx ++ "end"
         emit ctx (Call idx params) = emit ctx params ++ "\n" ++ mkIndent ctx ++ "call $f" ++ emit ctx idx
-        emit ctx (CallIndirect fn a b) = emit ctx a ++ "\n" ++ emitOp ctx "call_indirect $t0" b fn
+        emit ctx (CallIndirect fn a b) = emit ctx a ++ "\n" ++ emitOp ctx "call_indirect (type $t0)" b fn
         emit ctx (Chain Empty a) = emit ctx a
         emit ctx (Chain a Empty) = emit ctx a
         emit ctx (Chain a b) = emit ctx a ++ "\n" ++ emit ctx b

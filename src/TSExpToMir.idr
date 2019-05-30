@@ -111,7 +111,7 @@ rebindUpvalues count expr =
 
 applyArgs : (fn : MExp Obj locals) -> (args : List (MExp Obj locals)) -> MExp Obj locals
 applyArgs fn [] = fn
-applyArgs fn (x :: xs) = applyArgs (CallVirt (Tag fn) fn x) xs
+applyArgs fn (x :: xs) = applyArgs (Let fn (CallVirt (Tag (Local FZ)) (Local FZ) (insertHere x))) xs
 
 wrappingArithmetic : (x : Nat) -> {amount : Nat} -> (prf : LTE (S x) amount) -> (S (minus amount (S x)) = minus amount x)
 wrappingArithmetic _ {amount = Z} LTEZero impossible
@@ -275,28 +275,57 @@ data MainState : Nat -> Type where
     Searching : Fin defs -> MainState defs
     Found : Nat -> MainState defs
 
-translateDefs : (defs : List TSDef) -> MainState (length defs) -> Emit Nat
+translateDefs : (defs : List TSDef) -> MainState (length defs) -> Emit (List Nat, Nat)
 translateDefs [] (Searching FZ) impossible
 translateDefs [] (Searching (FS _)) impossible
-translateDefs [] (Found idx) = pure idx
+translateDefs [] (Found idx) = pure ([], idx)
 translateDefs (d :: ds) (Searching FZ) = do
     idx <- translateDef d
-    translateDefs ds (Found idx)
+    (indices, main) <- translateDefs ds (Found idx)
+    pure (idx :: indices, main)
 translateDefs (d :: ds) (Searching (FS x)) = do
-    translateDef d
-    translateDefs ds (Searching x)
-translateDefs (d :: ds) (Found idx) = do
-    translateDef d
-    translateDefs ds (Found idx)
+    idx <- translateDef d
+    (indices, main) <- translateDefs ds (Searching x)
+    pure (idx :: indices, main)
+translateDefs (d :: ds) (Found mainIdx) = do
+    idx <- translateDef d
+    (indices, main) <- translateDefs ds (Found mainIdx)
+    pure (idx :: indices, main)
 
 arity : TSDef -> Nat
 arity (Function args _) = args
 arity (Constructor _ arity) = arity
 
+fixIndex : List Nat -> Nat -> Nat
+fixIndex [] _ = 0
+fixIndex (i :: _) Z = i
+fixIndex (_ :: is) (S x) = fixIndex is x
+
+parameters (actualIndices : List Nat)
+    fixGlobalsInExpr : MExp ty vars -> MExp ty vars
+    fixGlobalsInExpr (Const x) = Const x
+    fixGlobalsInExpr (Local x) = Local x
+    fixGlobalsInExpr (Let x y) = Let (fixGlobalsInExpr x) (fixGlobalsInExpr y)
+    fixGlobalsInExpr (Create x xs) = Create (fixGlobalsInExpr x) (map fixGlobalsInExpr xs)
+    fixGlobalsInExpr (Field x y) = Field (fixGlobalsInExpr x) (fixGlobalsInExpr y)
+    fixGlobalsInExpr (Tag x) = Tag (fixGlobalsInExpr x)
+    fixGlobalsInExpr (If x y z) = If (fixGlobalsInExpr x) (fixGlobalsInExpr y) (fixGlobalsInExpr z)
+    fixGlobalsInExpr (Call k xs) = Call (fixIndex actualIndices k) (map fixGlobalsInExpr xs)
+    fixGlobalsInExpr (CallVirt x y z) = CallVirt (fixGlobalsInExpr x) (fixGlobalsInExpr y) (fixGlobalsInExpr z)
+    fixGlobalsInExpr (Binop x y z) = Binop x (fixGlobalsInExpr y) (fixGlobalsInExpr z)
+    fixGlobalsInExpr Crash = Crash
+
+    fixGlobalsInDef : MDef -> MDef
+    fixGlobalsInDef (MkMDef args body) = MkMDef args (fixGlobalsInExpr body)
+
+mapDoesNotChangeLength : (list : List a) -> (f : a -> b) -> (length list = length (map f list))
+mapDoesNotChangeLength [] f = Refl
+mapDoesNotChangeLength (x :: xs) f = rewrite mapDoesNotChangeLength xs f in Refl
+
 export
 translateModule : TSExp.Module -> Trans Mir.Module
 translateModule (MkModule defs main) = do
-    (mdefs, mainIdx) <- emit (map arity defs) (translateDefs defs (Searching main))
+    (mdefs, (indices, mainIdx)) <- emit (map arity defs) (translateDefs defs (Searching main))
     case natToFin mainIdx (length mdefs) of
-        Just idx => pure (MkModule mdefs idx)
+        Just idx => pure (MkModule (map (fixGlobalsInDef indices) mdefs) (rewrite sym (mapDoesNotChangeLength mdefs (fixGlobalsInDef indices)) in idx))
         Nothing => abort "bug: main oob"

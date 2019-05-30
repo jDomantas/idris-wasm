@@ -1,6 +1,7 @@
 module Main
 
 import Data.Fin
+import Data.Vect
 import Trans
 import Wasm
 import WasmEmit
@@ -10,17 +11,22 @@ import MirToWasm
 import TSExp
 import TSExpToMir
 
-mirModule : Mir.Module
-mirModule =
-    MkModule
-        [MkMDef 1
-            (Let
-                (Create (Const 1) [])
-                (Create (Tag (Local 1)) [Local 1, Local 0]))]
-        FZ
+tsModule : TSExp.Module
+tsModule = MkModule
+    [ Function
+        1
+        (Apply (Apply (Global 1) []) [Local FZ])
+    , Function
+        0
+        (TSExp.Lam (Local FZ))
+    ]
+    FZ
+
+mirModule : Trans Mir.Module
+mirModule = TSExpToMir.translateModule tsModule
 
 wasmModule : Trans Wasm.Module
-wasmModule = MirToWasm.translateModule mirModule
+wasmModule = MirToWasm.translateModule !mirModule
 
 showByte : Int -> String
 showByte x = nibble (x `div` 16) ++ nibble (x `mod` 16) ++ "  "
