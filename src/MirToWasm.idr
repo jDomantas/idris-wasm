@@ -118,8 +118,26 @@ diff3 (S x) (S y) (S z) = case diff3 x y z of
 flip : {lim : Nat} -> (x : Fin lim) -> Fin lim
 flip {lim = Z} FZ impossible
 flip {lim = Z} (FS _) impossible
-flip {lim = (S k)} FZ = last
-flip {lim = (S k)} (FS x) = shift 1 (flip {lim = k} x)
+flip {lim = (S k)} FZ = last {n = k}
+flip {lim = (S k)} (FS x) = weaken (flip {lim = k} x)
+
+finToNatLast : (k : Nat) -> (finToNat (last {n = k})) = k
+finToNatLast Z = Refl
+finToNatLast (S k) = rewrite finToNatLast k in Refl
+
+finToNatWeaken : (x : Fin lim) -> (finToNat (weaken x) = finToNat x)
+finToNatWeaken FZ = Refl
+finToNatWeaken (FS x) = rewrite finToNatWeaken x in Refl
+
+-- flip should change number x in range [0; n - 1] to number n - 1 - x
+flipTotal : {lim : Nat} -> (x : Fin lim) -> (1 + finToNat x + finToNat (flip x) = lim)
+flipTotal {lim = Z} FZ impossible
+flipTotal {lim = Z} (FS _) impossible
+flipTotal {lim = (S k)} FZ = rewrite finToNatLast k in Refl
+flipTotal {lim = (S k)} (FS x) =
+    rewrite finToNatWeaken (flip x) in
+    rewrite flipTotal {lim = k} x in
+        Refl
 
 insertSlotFin : (idx : Nat) -> Fin slots -> Fin (S slots)
 insertSlotFin Z x = FS x
