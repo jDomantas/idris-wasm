@@ -78,7 +78,7 @@ mutual
         emit ctx GlobalGet = mkIndent ctx ++ "get_global $g0"
         emit ctx (GlobalSet val) = emit ctx val ++ "\n" ++ mkIndent ctx ++ "set_global $g0"
         emit ctx (Load addr) = emit ctx addr ++ "\n" ++ mkIndent ctx ++ "i32.load"
-        emit ctx (Store val addr) = emitOp ctx "i32.store" val addr
+        emit ctx (Store val addr) = emitOp ctx "i32.store" addr val
         emit ctx MemorySize = mkIndent ctx ++ "current_memory"
         emit ctx (MemoryGrow pages) = emit ctx pages ++ "\n" ++ mkIndent ctx ++ "grow_memory"
         emit ctx Unreachable = mkIndent ctx ++ "unreachable"

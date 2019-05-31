@@ -87,7 +87,7 @@ mutual
         emit GlobalGet = [0x23, 0x00]
         emit (GlobalSet val) = emit val ++ [0x24, 0x00]
         emit (Load addr) = emit addr ++ [0x28, 0x02, 0x00]
-        emit (Store val addr) = emit val ++ emit addr ++ [0x36, 0x02, 0x00]
+        emit (Store val addr) = emit addr ++ emit val ++ [0x36, 0x02, 0x00]
         emit MemorySize = [0x3F, 0x00]
         emit (MemoryGrow pages) = emit pages ++ [0x40, 0x00]
         emit Unreachable = [0x00]
