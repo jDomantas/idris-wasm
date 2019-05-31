@@ -50,7 +50,7 @@ mutual
 
     Emit (CallParams ctx ty) where
         emit ctx ParamsNil = ""
-        emit ctx (ParamsCons p ParamsNil) = emit ctx p
+        emit ctx (ParamsCons p ParamsNil) = emit ctx p ++ "\n"
         emit ctx (ParamsCons p ps) = emit ctx p ++ "\n" ++ emit ctx ps
 
     Emit (Instr ctx ty) where
@@ -101,7 +101,7 @@ mutual
             mkIndent ctx ++ "else\n" ++
             emit (indented ctx) e ++ "\n" ++
             mkIndent ctx ++ "end"
-        emit ctx (Call idx params) = emit ctx params ++ "\n" ++ mkIndent ctx ++ "call $f" ++ emit ctx idx
+        emit ctx (Call idx params) = emit ctx params ++ mkIndent ctx ++ "call $f" ++ emit ctx idx
         emit ctx (CallIndirect fn a b) = emit ctx a ++ "\n" ++ emitOp ctx "call_indirect (type $t0)" b fn
         emit ctx (Chain Empty a) = emit ctx a
         emit ctx (Chain a Empty) = emit ctx a
