@@ -373,7 +373,8 @@ mutual
         obj <- translateWithAlloc hasSlots x a
         idx <- translateWithAlloc hasSlots y b
         let offset = Wasm.Binop MulInt (Const (ValueI32 4)) idx
-        let addr = Wasm.Binop AddInt obj offset
+        let withTagOffset = Wasm.Binop AddInt (Const (ValueI32 4)) offset
+        let addr = Wasm.Binop AddInt obj withTagOffset
         pure (Load addr)
     translateWithAlloc hasSlots (Tag x) (AllocTag y) = do
         objAddr <- translateWithAlloc hasSlots x y
